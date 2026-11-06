@@ -1,80 +1,90 @@
 
- // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
-
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:html' as web;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as im;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
-void main() => runApp(const LTJ3App());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const LTJ3App());
+}
 
 const black = Color(0xFF080808);
-const dark = Color(0xFF191919);
-const grey = Color(0xFF303030);
-const silver = Color(0xFFCCCCCC);
+const panel = Color(0xFF191919);
+const tile = Color(0xFF303030);
+const silver = Color(0xFFC8C8C8);
 
-double cap(num n, double a, double b) =>
-    n.clamp(a, b).toDouble();
+double bound(num v, double low, double high) =>
+    v.clamp(low, high).toDouble();
 
-class FilterLook {
-  final double light, contrast, color, warmth, fade;
-  const FilterLook(
-    this.light,
+class LTJ3Preset {
+  final double exposure;
+  final double contrast;
+  final double saturation;
+  final double warmth;
+  final double fade;
+
+  const LTJ3Preset(
+    this.exposure,
     this.contrast,
-    this.color,
+    this.saturation,
     this.warmth,
     this.fade,
   );
 }
 
-const looks = <FilterLook>[
-  FilterLook(.10, .18, .24, .08, 0),
-  FilterLook(-.15, .33, -.25, -.12, 0),
-  FilterLook(.16, .14, .38, .12, 0),
-  FilterLook(.05, -.15, -.28, -.08, .16),
-  FilterLook(-.20, .40, -.15, -.08, 0),
-  FilterLook(.20, -.19, -.22, .20, .14),
-  FilterLook(.08, .28, .42, .10, 0),
-  FilterLook(-.12, .24, -.42, -.20, .04),
-  FilterLook(.02, .38, -1, 0, 0),
-  FilterLook(-.18, .30, -.28, .15, .03),
-  FilterLook(.15, .29, .25, .12, 0),
-  FilterLook(-.10, -.13, -.50, .19, .20),
-  FilterLook(-.20, .28, -.40, -.22, .03),
-  FilterLook(.18, .19, .18, .24, 0),
-  FilterLook(-.25, .42, -.45, -.15, 0),
-  FilterLook(.08, .45, -1, 0, 0),
-  FilterLook(-.09, .33, .30, -.17, 0),
-  FilterLook(.19, -.20, -.40, .06, .20),
-  FilterLook(-.17, .28, -.80, -.12, .04),
-  FilterLook(-.12, .46, .14, .17, 0),
+const presets = <LTJ3Preset>[
+  LTJ3Preset(.09, .16, .22, .06, 0),
+  LTJ3Preset(-.13, .30, -.20, -.10, 0),
+  LTJ3Preset(.15, .13, .36, .14, 0),
+  LTJ3Preset(.04, -.14, -.24, -.08, .15),
+  LTJ3Preset(-.18, .34, -.12, -.08, 0),
+  LTJ3Preset(.18, -.16, -.20, .18, .14),
+  LTJ3Preset(.08, .26, .36, .09, 0),
+  LTJ3Preset(-.12, .20, -.36, -.18, .04),
+  LTJ3Preset(.03, .30, -1, 0, 0),
+  LTJ3Preset(-.15, .29, -.28, .13, .03),
+  LTJ3Preset(.13, .24, .22, .12, 0),
+  LTJ3Preset(-.09, -.12, -.42, .16, .18),
+  LTJ3Preset(-.17, .24, -.35, -.20, .03),
+  LTJ3Preset(.16, .18, .17, .22, 0),
+  LTJ3Preset(-.22, .36, -.40, -.14, 0),
+  LTJ3Preset(.05, .39, -1, 0, 0),
+  LTJ3Preset(-.08, .29, .28, -.15, 0),
+  LTJ3Preset(.17, -.18, -.34, .06, .18),
+  LTJ3Preset(-.14, .24, -.75, -.10, .04),
+  LTJ3Preset(-.10, .40, .12, .15, 0),
 ];
 
-const textures = [
+const textureNames = [
   'NONE',
-  'FINE GRAIN',
+  'FILM GRAIN',
   'SOFT HAZE',
-  'GOLDEN GLOW',
-  'COOL LIGHT',
-  'ROSE LIGHT',
-  'FILM LOOK',
-  'SOFT BOKEH',
+  'GOLDEN LIGHT',
+  'BLUE LIGHT',
+  'ROSE GLOW',
+  'VINTAGE FILM',
+  'BOKEH',
 ];
 
-class Settings {
-  int filter = -1;
+class PhotoSettings {
+  // Explicit default constructor fixes the old
+  // unnamed-constructor problem.
+  PhotoSettings();
+
+  int preset = -1;
   int texture = 0;
 
-  double strength = 1;
+  double intensity = 1;
   double exposure = 0;
   double contrast = 0;
   double saturation = 0;
-  double temperature = 0;
+  double warmth = 0;
   double shadows = 0;
   double highlights = 0;
   double fade = 0;
@@ -82,14 +92,14 @@ class Settings {
   double sharpen = 0;
   double textureAmount = .5;
 
-  Settings copy() => Settings()
-    ..filter = filter
+  PhotoSettings copy() => PhotoSettings()
+    ..preset = preset
     ..texture = texture
-    ..strength = strength
+    ..intensity = intensity
     ..exposure = exposure
     ..contrast = contrast
     ..saturation = saturation
-    ..temperature = temperature
+    ..warmth = warmth
     ..shadows = shadows
     ..highlights = highlights
     ..fade = fade
@@ -98,13 +108,13 @@ class Settings {
     ..textureAmount = textureAmount;
 
   Map<String, dynamic> toJson() => {
-    'filter': filter,
+    'preset': preset,
     'texture': texture,
-    'strength': strength,
+    'intensity': intensity,
     'exposure': exposure,
     'contrast': contrast,
     'saturation': saturation,
-    'temperature': temperature,
+    'warmth': warmth,
     'shadows': shadows,
     'highlights': highlights,
     'fade': fade,
@@ -113,20 +123,22 @@ class Settings {
     'textureAmount': textureAmount,
   };
 
-  factory Settings.fromJson(Map<String, dynamic> j) {
-    double read(String k, double fallback) {
-      final v = j[k];
+  factory PhotoSettings.fromJson(
+    Map<String, dynamic> data,
+  ) {
+    double read(String key, double fallback) {
+      final v = data[key];
       return v is num ? v.toDouble() : fallback;
     }
 
-    return Settings()
-      ..filter = read('filter', -1).toInt()
+    return PhotoSettings()
+      ..preset = read('preset', -1).toInt()
       ..texture = read('texture', 0).toInt()
-      ..strength = read('strength', 1)
+      ..intensity = read('intensity', 1)
       ..exposure = read('exposure', 0)
       ..contrast = read('contrast', 0)
       ..saturation = read('saturation', 0)
-      ..temperature = read('temperature', 0)
+      ..warmth = read('warmth', 0)
       ..shadows = read('shadows', 0)
       ..highlights = read('highlights', 0)
       ..fade = read('fade', 0)
@@ -136,102 +148,139 @@ class Settings {
   }
 }
 
-double hash(int x, int y) {
-  final v = math.sin(x * 12.9898 + y * 78.233) *
-      43758.5453;
-  return v - v.floorToDouble();
+double grainAt(int x, int y) {
+  final n = math.sin(
+    x * 127.1 + y * 311.7,
+  ) * 43758.5453;
+
+  return n - n.floorToDouble();
 }
 
-double glow(double x, double y, double r) =>
-    math.exp(-(x * x + y * y) / (2 * r * r));
+double softGlow(
+  double x,
+  double y,
+  double radius,
+) {
+  return math.exp(
+    -(x * x + y * y) /
+        (2 * radius * radius),
+  );
+}
 
-im.Image resizeImage(im.Image source, int maxSide) {
-  if (math.max(source.width, source.height) <= maxSide) {
-    return im.copyResize(
-      source,
-      width: source.width,
-      height: source.height,
+img.Image makePreview(img.Image image, int maxSide) {
+  if (math.max(image.width, image.height) <= maxSide) {
+    return img.copyResize(
+      image,
+      width: image.width,
+      height: image.height,
     );
   }
 
-  return source.width >= source.height
-      ? im.copyResize(source, width: maxSide)
-      : im.copyResize(source, height: maxSide);
+  if (image.width > image.height) {
+    return img.copyResize(image, width: maxSide);
+  }
+
+  return img.copyResize(image, height: maxSide);
 }
 
-im.Image render(im.Image source, Settings s) {
-  final f = s.filter >= 0 && s.filter < looks.length
-      ? looks[s.filter]
+img.Image editImage(
+  img.Image original,
+  PhotoSettings settings,
+) {
+  final preset = settings.preset >= 0 &&
+          settings.preset < presets.length
+      ? presets[settings.preset]
       : null;
 
-  final exposure = cap(
-    s.exposure + (f?.light ?? 0) * s.strength,
-    -.8, .8,
+  final exposure = bound(
+    settings.exposure +
+        (preset?.exposure ?? 0) * settings.intensity,
+    -.85,
+    .85,
   );
 
-  final contrast = cap(
-    1 + s.contrast +
-        (f?.contrast ?? 0) * s.strength,
-    .4, 1.8,
+  final contrast = bound(
+    1 +
+        settings.contrast +
+        (preset?.contrast ?? 0) * settings.intensity,
+    .4,
+    1.8,
   );
 
-  final saturation = cap(
-    1 + s.saturation +
-        (f?.color ?? 0) * s.strength,
-    0, 2,
+  final saturation = bound(
+    1 +
+        settings.saturation +
+        (preset?.saturation ?? 0) * settings.intensity,
+    0,
+    2,
   );
 
-  final warmth = cap(
-    s.temperature +
-        (f?.warmth ?? 0) * s.strength,
-    -.5, .5,
+  final warmth = bound(
+    settings.warmth +
+        (preset?.warmth ?? 0) * settings.intensity,
+    -.45,
+    .45,
   );
 
-  final fade = cap(
-    s.fade + (f?.fade ?? 0) * s.strength,
-    0, .5,
+  final fade = bound(
+    settings.fade +
+        (preset?.fade ?? 0) * settings.intensity,
+    0,
+    .5,
   );
 
   final gain = math.pow(2, exposure).toDouble();
 
-  final out = source.convert(
-    format: im.Format.uint8,
+  final result = original.convert(
+    format: img.Format.uint8,
     numChannels: 3,
   );
 
-  final w = out.width.toDouble();
-  final h = out.height.toDouble();
+  final width = result.width.toDouble();
+  final height = result.height.toDouble();
 
-  for (final pixel in out) {
+  for (final pixel in result) {
     final x = pixel.x;
     final y = pixel.y;
-    final nx = x / w;
-    final ny = y / h;
+    final nx = x / width;
+    final ny = y / height;
 
     double r = pixel.r / 255;
     double g = pixel.g / 255;
     double b = pixel.b / 255;
 
-    final luma = cap(
+    final brightness = bound(
       .2126 * r + .7152 * g + .0722 * b,
-      0, 1,
+      0,
+      1,
     );
 
+    final shadowWeight =
+        (1 - brightness) * (1 - brightness);
+
+    final highlightWeight =
+        brightness * brightness;
+
     final tone =
-        s.shadows * math.pow(1 - luma, 2) * .22 +
-        s.highlights * math.pow(luma, 2) * .20;
+        settings.shadows * shadowWeight * .24 +
+        settings.highlights * highlightWeight * .20;
 
     r = ((r * gain + tone + warmth * .18 - .5) *
-            contrast) + .5;
+            contrast) +
+        .5;
+
     g = ((g * gain + tone - .5) * contrast) + .5;
+
     b = ((b * gain + tone - warmth * .18 - .5) *
-            contrast) + .5;
+            contrast) +
+        .5;
 
-    final gray = .2126 * r + .7152 * g + .0722 * b;
+    final greyValue =
+        .2126 * r + .7152 * g + .0722 * b;
 
-    r = gray + (r - gray) * saturation;
-    g = gray + (g - gray) * saturation;
-    b = gray + (b - gray) * saturation;
+    r = greyValue + (r - greyValue) * saturation;
+    g = greyValue + (g - greyValue) * saturation;
+    b = greyValue + (b - greyValue) * saturation;
 
     r = r * (1 - fade) + fade * .5;
     g = g * (1 - fade) + fade * .5;
@@ -239,111 +288,153 @@ im.Image render(im.Image source, Settings s) {
 
     final dx = (nx - .5) * 2;
     final dy = (ny - .5) * 2;
-    final dist = cap(
+
+    final distance = bound(
       math.sqrt(dx * dx + dy * dy) / math.sqrt2,
-      0, 1,
+      0,
+      1,
     );
 
-    final edge = 1 - s.vignette * dist * dist * .7;
+    final edge =
+        1 - settings.vignette * distance * distance * .7;
+
     r *= edge;
     g *= edge;
     b *= edge;
 
-    final a = s.textureAmount;
+    final amount = settings.textureAmount;
 
-    if (s.texture == 1 || s.texture == 6) {
-      final grain = (hash(x, y) - .5) * a * .05;
-      r += grain;
-      g += grain;
-      b += grain;
+    if (settings.texture == 1 ||
+        settings.texture == 6) {
+      final fineGrain =
+          (grainAt(x, y) - .5) * amount * .055;
+
+      r += fineGrain;
+      g += fineGrain;
+      b += fineGrain;
     }
 
-    if (s.texture == 2 || s.texture == 6) {
-      final haze = glow(
-        nx - .5,
-        ny - .7,
-        .65,
-      ) * a * .14;
+    if (settings.texture == 2 ||
+        settings.texture == 6) {
+      final haze = softGlow(
+            nx - .5,
+            ny - .65,
+            .65,
+          ) *
+          amount *
+          .16;
 
-      r = r * (1 - haze) + .75 * haze;
-      g = g * (1 - haze) + .73 * haze;
+      r = r * (1 - haze) + .78 * haze;
+      g = g * (1 - haze) + .75 * haze;
       b = b * (1 - haze) + .72 * haze;
     }
 
-    if (s.texture >= 3 && s.texture <= 5) {
-      final cx = s.texture == 3
-          ? -.2
-          : s.texture == 4 ? 1.2 : .5;
+    if (settings.texture >= 3 &&
+        settings.texture <= 5) {
+      final centerX = settings.texture == 3
+          ? -.15
+          : settings.texture == 4
+              ? 1.15
+              : .5;
 
-      final cy = s.texture == 5 ? -.2 : .55;
+      final centerY =
+          settings.texture == 5 ? -.2 : .5;
 
-      final light = cap(
-        glow(nx - cx, ny - cy, .55) * a * .4,
-        0, .35,
+      final alpha = bound(
+        softGlow(
+              nx - centerX,
+              ny - centerY,
+              .53,
+            ) *
+            amount *
+            .42,
+        0,
+        .4,
       );
 
-      final cr = s.texture == 4 ? .35 : 1.0;
-      final cg = s.texture == 4 ? .60 : .55;
-      final cb = s.texture == 4
-          ? 1.0 : s.texture == 5 ? .7 : .20;
+      final cr =
+          settings.texture == 4 ? .34 : 1.0;
 
-      r = r * (1 - light) + cr * light;
-      g = g * (1 - light) + cg * light;
-      b = b * (1 - light) + cb * light;
+      final cg =
+          settings.texture == 4 ? .62 : .56;
+
+      final cb = settings.texture == 4
+          ? 1.0
+          : settings.texture == 5
+              ? .72
+              : .2;
+
+      r = r * (1 - alpha) + cr * alpha;
+      g = g * (1 - alpha) + cg * alpha;
+      b = b * (1 - alpha) + cb * alpha;
     }
 
-    if (s.texture == 7) {
-      double light = 0;
+    if (settings.texture == 7) {
+      double bokeh = 0;
 
       for (int i = 0; i < 5; i++) {
-        final cx = hash(i, 12);
-        final cy = hash(i, 29);
-        final radius = .04 + hash(i, 47) * .06;
+        final centerX = grainAt(i, 12);
+        final centerY = grainAt(i, 29);
 
-        light += glow(
-          nx - cx,
-          ny - cy,
-          radius,
-        ) * .12;
+        final radius =
+            .04 + grainAt(i, 47) * .06;
+
+        bokeh += softGlow(
+              nx - centerX,
+              ny - centerY,
+              radius,
+            ) *
+            .15;
       }
 
-      light = cap(light * a, 0, .18);
+      final alpha = bound(
+        bokeh * amount,
+        0,
+        .22,
+      );
 
-      r = r * (1 - light) + light;
-      g = g * (1 - light) + light * .86;
-      b = b * (1 - light) + light * .70;
+      r = r * (1 - alpha) + alpha;
+      g = g * (1 - alpha) + alpha * .85;
+      b = b * (1 - alpha) + alpha * .7;
     }
 
-    pixel.r = (cap(r, 0, 1) * 255).round();
-    pixel.g = (cap(g, 0, 1) * 255).round();
-    pixel.b = (cap(b, 0, 1) * 255).round();
+    pixel.r = (bound(r, 0, 1) * 255).round();
+    pixel.g = (bound(g, 0, 1) * 255).round();
+    pixel.b = (bound(b, 0, 1) * 255).round();
   }
 
-  if (s.sharpen > 0) {
-    final blurred = im.gaussianBlur(out, radius: 1);
-    final amount = s.sharpen * .6;
+  if (settings.sharpen > .01) {
+    final blur = img.gaussianBlur(
+      result,
+      radius: 1,
+    );
 
-    for (final pixel in out) {
-      final q = blurred.getPixel(pixel.x, pixel.y);
+    final strength = settings.sharpen * .6;
 
-      pixel.r = cap(
-        pixel.r + (pixel.r - q.r) * amount,
-        0, 255,
+    for (final p in result) {
+      final q = blur.getPixel(p.x, p.y);
+
+      p.r = bound(
+        p.r + (p.r - q.r) * strength,
+        0,
+        255,
       ).round();
 
-      pixel.g = cap(
-        pixel.g + (pixel.g - q.g) * amount,
-        0, 255,
+      p.g = bound(
+        p.g + (p.g - q.g) * strength,
+        0,
+        255,
       ).round();
 
-      pixel.b = cap(
-        pixel.b + (pixel.b - q.b) * amount,
-        0, 255,
+      p.b = bound(
+        p.b + (p.b - q.b) * strength,
+        0,
+        255,
       ).round();
     }
   }
 
-  return out;
+  return result;
 }
 
 class LTJ3App extends StatelessWidget {
@@ -359,89 +450,96 @@ class LTJ3App extends StatelessWidget {
         colorScheme: const ColorScheme.dark(
           primary: Colors.white,
           onPrimary: Colors.black,
-          surface: dark,
+          surface: panel,
+        ),
+        sliderTheme: const SliderThemeData(
+          activeTrackColor: Colors.white,
+          inactiveTrackColor: tile,
+          thumbColor: Colors.white,
+          trackHeight: 3,
         ),
       ),
-      home: const Editor(),
+      home: const LTJ3Studio(),
     );
   }
 }
 
-class Editor extends StatefulWidget {
-  const Editor({super.key});
+class LTJ3Studio extends StatefulWidget {
+  const LTJ3Studio({super.key});
 
   @override
-  State<Editor> createState() => _EditorState();
+  State<LTJ3Studio> createState() => _LTJ3StudioState();
 }
 
-class _EditorState extends State<Editor> {
-  final picker = ImagePicker();
+class _LTJ3StudioState extends State<LTJ3Studio> {
+  final ImagePicker picker = ImagePicker();
 
-  final saved = <String, Settings>{};
-  final photos = <Uint8List>[];
+  final Map<String, PhotoSettings> savedFilters = {};
+  final List<Uint8List> library = [];
 
-  Settings settings = Settings();
+  PhotoSettings settings = PhotoSettings();
 
-  im.Image? original;
-  im.Image? previewSource;
+  img.Image? original;
+  img.Image? previewSource;
 
-  Uint8List? preview;
-  Uint8List? before;
+  Uint8List? beforeImage;
+  Uint8List? afterImage;
 
-  List<Uint8List> thumbnails = [];
+  List<Uint8List> filterThumbnails = [];
 
   bool started = false;
   bool editing = false;
   bool busy = false;
   bool comparing = false;
 
-  String section = 'Filters';
+  String selectedTab = 'Filters';
 
   @override
   void initState() {
     super.initState();
-    loadSaved();
+    loadSavedFilters();
   }
 
-  void loadSaved() {
-    try {
-      final raw =
-          html.window.localStorage['ltj3_filters_v7'];
-
-      if (raw == null) return;
-
-      final data = jsonDecode(raw) as Map;
-
-      for (final entry in data.entries) {
-        saved[entry.key.toString()] =
-            Settings.fromJson(
-          Map<String, dynamic>.from(entry.value as Map),
-        );
-      }
-    } catch (_) {
-      saved.clear();
-    }
-  }
-
-  void persist() {
-    try {
-      html.window.localStorage['ltj3_filters_v7'] =
-          jsonEncode(
-        saved.map(
-          (k, v) => MapEntry(k, v.toJson()),
-        ),
-      );
-    } catch (_) {
-      showMessage('Unable to save filters');
-    }
-  }
-
-  void showMessage(String text) {
+  void showNotice(String text) {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text)),
     );
+  }
+
+  void loadSavedFilters() {
+    try {
+      final stored =
+          web.window.localStorage['ltj3_v8_filters'];
+
+      if (stored == null) return;
+
+      final parsed = jsonDecode(stored) as Map;
+
+      for (final item in parsed.entries) {
+        savedFilters[item.key.toString()] =
+            PhotoSettings.fromJson(
+          Map<String, dynamic>.from(item.value as Map),
+        );
+      }
+    } catch (_) {
+      savedFilters.clear();
+    }
+  }
+
+  void persistFilters() {
+    try {
+      web.window.localStorage['ltj3_v8_filters'] =
+          jsonEncode(
+        savedFilters.map(
+          (key, value) =>
+              MapEntry(key, value.toJson()),
+        ),
+      );
+    } catch (_) {
+      showNotice('Could not save custom filters');
+    }
   }
 
   Future<void> importPhoto() async {
@@ -450,7 +548,6 @@ class _EditorState extends State<Editor> {
     try {
       final file = await picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 100,
       );
 
       if (file == null) return;
@@ -459,11 +556,13 @@ class _EditorState extends State<Editor> {
 
       if (!mounted) return;
 
-      setState(() => photos.add(bytes));
+      setState(() {
+        library.add(bytes);
+      });
 
       await openPhoto(bytes);
     } catch (_) {
-      showMessage('Import failed');
+      showNotice('Unable to import photo');
     }
   }
 
@@ -473,141 +572,159 @@ class _EditorState extends State<Editor> {
     setState(() => busy = true);
 
     try {
-      var decoded = im.decodeImage(bytes);
+      var decoded = img.decodeImage(bytes);
 
       if (decoded == null) {
-        throw Exception('Unsupported image');
+        throw Exception('Unsupported image format');
       }
 
-      decoded = im.bakeOrientation(decoded);
+      decoded = img.bakeOrientation(decoded);
 
-      final small = resizeImage(decoded, 1100);
-      final thumb = resizeImage(decoded, 240);
+      final preview = makePreview(decoded, 1200);
+      final thumbnail = makePreview(decoded, 260);
 
-      final results = <Uint8List>[];
+      final images = <Uint8List>[];
 
-      results.add(
+      images.add(
         Uint8List.fromList(
-          im.encodeJpg(thumb, quality: 95),
+          img.encodeJpg(thumbnail, quality: 95),
         ),
       );
 
-      for (int i = 0; i < 20; i++) {
-        final s = Settings()..filter = i;
+      for (int i = 0; i < presets.length; i++) {
+        final presetSettings = PhotoSettings()
+          ..preset = i;
 
-        results.add(
+        final result = editImage(
+          thumbnail,
+          presetSettings,
+        );
+
+        images.add(
           Uint8List.fromList(
-            im.encodeJpg(
-              render(thumb, s),
-              quality: 94,
-            ),
+            img.encodeJpg(result, quality: 94),
           ),
         );
       }
 
       final clean = Uint8List.fromList(
-        im.encodeJpg(small, quality: 96),
+        img.encodeJpg(preview, quality: 96),
       );
 
       if (!mounted) return;
 
       setState(() {
         original = decoded;
-        previewSource = small;
-        before = clean;
-        preview = clean;
-        thumbnails = results;
-        settings = Settings();
+        previewSource = preview;
+        beforeImage = clean;
+        afterImage = clean;
+        filterThumbnails = images;
+
+        settings = PhotoSettings();
         editing = true;
-        section = 'Filters';
+        selectedTab = 'Filters';
       });
     } catch (_) {
-      showMessage('Could not open photo');
+      showNotice('Could not open photo');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+      }
     }
   }
 
-  Future<void> refreshPreview() async {
+  Future<void> updatePreview() async {
     if (previewSource == null || busy) return;
 
     setState(() => busy = true);
 
     try {
-      final image = render(
+      final result = editImage(
         previewSource!,
         settings.copy(),
       );
 
-      final bytes = Uint8List.fromList(
-        im.encodeJpg(image, quality: 96),
+      final output = Uint8List.fromList(
+        img.encodeJpg(result, quality: 96),
       );
 
       if (!mounted) return;
 
-      setState(() => preview = bytes);
+      setState(() {
+        afterImage = output;
+      });
     } catch (_) {
-      showMessage('Preview failed');
+      showNotice('Preview failed');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+      }
     }
   }
 
-  void selectFilter(int index) {
+  void choosePreset(int index) {
     if (busy) return;
 
     setState(() {
-      settings.filter = index;
+      settings.preset = index;
     });
 
-    refreshPreview();
+    updatePreview();
   }
 
-  Future<void> saveFilter() async {
+  Future<void> saveCustomFilter() async {
     if (original == null) return;
 
     final controller = TextEditingController();
 
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('CREATE YOUR FILTER'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 32,
-          decoration: const InputDecoration(
-            hintText: 'My Signature',
-            labelText: 'Filter Name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              controller.text.trim(),
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: panel,
+          title: const Text('CREATE YOUR FILTER'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 32,
+            decoration: const InputDecoration(
+              labelText: 'Filter name',
+              hintText: 'My Signature',
+              border: OutlineInputBorder(),
             ),
-            child: const Text('Save'),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  controller.text.trim(),
+                );
+              },
+              child: const Text('Save Filter'),
+            ),
+          ],
+        );
+      },
     );
 
-    controller.dispose();
+    // Dialog is closed; settings are copied below.
+    if (!mounted) return;
 
     if (name == null || name.isEmpty) return;
 
     setState(() {
-      saved[name] = settings.copy();
-      section = 'My Filters';
+      savedFilters[name] = settings.copy();
+      selectedTab = 'My Filters';
     });
 
-    persist();
-    showMessage('Filter saved: $name');
+    persistFilters();
+    showNotice('Filter saved: $name');
   }
 
   Future<void> exportPhoto(bool png) async {
@@ -616,84 +733,98 @@ class _EditorState extends State<Editor> {
     setState(() => busy = true);
 
     try {
-      final output = render(
+      // Use the original full-resolution image.
+      final result = editImage(
         original!,
         settings.copy(),
       );
 
       final bytes = Uint8List.fromList(
         png
-            ? im.encodePng(output)
-            : im.encodeJpg(output, quality: 100),
+            ? img.encodePng(result)
+            : img.encodeJpg(result, quality: 100),
       );
 
-      final filename =
-          png ? 'LTJ3_EDIT.png' : 'LTJ3_EDIT.jpg';
+      final filename = png
+          ? 'LTJ3_EDITOR_ULTRA_HD.png'
+          : 'LTJ3_EDITOR_ULTRA_HD.jpg';
 
       await Share.shareXFiles(
         [
           XFile.fromData(
             bytes,
             name: filename,
-            mimeType:
-                png ? 'image/png' : 'image/jpeg',
+            mimeType: png
+                ? 'image/png'
+                : 'image/jpeg',
           ),
         ],
         fileNameOverrides: [filename],
       );
     } catch (_) {
-      showMessage('Export failed');
+      showNotice('Export failed. Try JPEG.');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+      }
     }
   }
 
-  void exportOptions() {
+  void showExportMenu() {
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text('LTJ3 ULTRA HD EXPORT'),
-            ),
-            ListTile(
-              title: const Text('JPEG QUALITY 100'),
-              onTap: () {
-                Navigator.pop(context);
-                exportPhoto(false);
-              },
-            ),
-            ListTile(
-              title: const Text('PNG LOSSLESS'),
-              onTap: () {
-                Navigator.pop(context);
-                exportPhoto(true);
-              },
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: panel,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('LTJ3 ULTRA HD EXPORT'),
+                subtitle: Text(
+                  'Export from original resolution',
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('JPEG MAX QUALITY'),
+                subtitle: const Text('Quality 100'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  exportPhoto(false);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.high_quality),
+                title: const Text('PNG LOSSLESS'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  exportPhoto(true);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget pill(
-    String name,
-    bool selected,
-    VoidCallback tap,
-  ) {
+  Widget tabButton(String name) {
+    final active = selectedTab == name;
+
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: TextButton(
-        onPressed: tap,
+        onPressed: () {
+          setState(() => selectedTab = name);
+        },
         style: TextButton.styleFrom(
-          backgroundColor:
-              selected ? grey : dark,
+          backgroundColor: active ? tile : panel,
           foregroundColor:
-              selected ? Colors.white : silver,
+              active ? Colors.white : silver,
           padding: const EdgeInsets.symmetric(
             horizontal: 17,
+            vertical: 13,
           ),
           shape: const StadiumBorder(),
         ),
@@ -702,100 +833,116 @@ class _EditorState extends State<Editor> {
     );
   }
 
-  Widget adjust(
-    String name,
+  Widget adjustment(
+    String label,
     double value,
     double min,
     double max,
-    ValueChanged<double> callback,
+    ValueChanged<double> onChange,
   ) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            name,
-            style: const TextStyle(fontSize: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: silver,
+                fontSize: 12,
+              ),
+            ),
           ),
-        ),
-        Expanded(
-          child: Slider(
-            value: cap(value, min, max),
-            min: min,
-            max: max,
-            activeColor: Colors.white,
-            onChanged: busy
-                ? null
-                : (v) => setState(() => callback(v)),
-            onChangeEnd: (_) => refreshPreview(),
+          Expanded(
+            child: Slider(
+              min: min,
+              max: max,
+              value: bound(value, min, max),
+              onChanged: busy
+                  ? null
+                  : (v) {
+                      setState(() => onChange(v));
+                    },
+              onChangeEnd: (_) {
+                updatePreview();
+              },
+            ),
           ),
-        ),
-        SizedBox(
-          width: 38,
-          child: Text(
-            value.toStringAsFixed(2),
-            style: const TextStyle(fontSize: 10),
+          SizedBox(
+            width: 40,
+            child: Text(
+              value.toStringAsFixed(2),
+              style: const TextStyle(
+                color: silver,
+                fontSize: 10,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget filterList() {
+  Widget filtersPanel() {
     return Column(
       children: [
+        const SizedBox(height: 12),
         const Text(
           'LTJ3 SIGNATURE COLLECTION',
           style: TextStyle(
+            fontSize: 11,
             letterSpacing: 2,
             color: silver,
-            fontSize: 11,
           ),
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 127,
+          height: 132,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: thumbnails.length,
-            itemBuilder: (context, i) {
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+            ),
+            itemCount: filterThumbnails.length,
+            itemBuilder: (context, index) {
               final selected =
-                  settings.filter == i - 1;
+                  settings.preset == index - 1;
 
               return GestureDetector(
-                onTap: () => selectFilter(i - 1),
+                onTap: () => choosePreset(index - 1),
                 child: Container(
-                  width: 100,
-                  margin:
-                      const EdgeInsets.only(right: 8),
+                  width: 104,
+                  margin: const EdgeInsets.only(right: 8),
                   child: Column(
                     children: [
                       Container(
-                        height: 99,
-                        width: 99,
+                        height: 100,
+                        width: 100,
                         clipBehavior: Clip.antiAlias,
                         decoration: BoxDecoration(
                           border: Border.all(
                             color: selected
                                 ? Colors.white
-                                : grey,
+                                : tile,
                             width: 2,
                           ),
                           borderRadius:
                               BorderRadius.circular(7),
                         ),
                         child: Image.memory(
-                          thumbnails[i],
+                          filterThumbnails[index],
                           fit: BoxFit.cover,
                         ),
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 8),
                       Text(
-                        i == 0
+                        index == 0
                             ? 'ORIGINAL'
-                            : '□ LTJ3 ${i.toString().padLeft(2, '0')}',
+                            : '□ LTJ3 ${index.toString().padLeft(2, '0')}',
                         style: const TextStyle(
                           fontSize: 10,
+                          color: silver,
                         ),
                       ),
                     ],
@@ -805,174 +952,267 @@ class _EditorState extends State<Editor> {
             },
           ),
         ),
-        adjust(
+        adjustment(
           'Intensity',
-          settings.strength,
-          0, 1.5,
-          (v) => settings.strength = v,
+          settings.intensity,
+          0,
+          1.5,
+          (v) => settings.intensity = v,
         ),
       ],
     );
   }
 
-  Widget customList() {
+  Widget texturePanel() {
     return Column(
       children: [
-        FilledButton.icon(
-          onPressed: saveFilter,
-          icon: const Icon(Icons.bookmark_add),
-          label: const Text('CREATE YOUR FILTER'),
-        ),
-        for (final name in saved.keys.toList())
-          ListTile(
-            title: Text(name),
-            leading: const Icon(Icons.auto_awesome),
-            onTap: () {
-              if (busy) return;
-
-              setState(() {
-                settings = saved[name]!.copy();
-              });
-
-              refreshPreview();
-            },
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () {
-                setState(() => saved.remove(name));
-                persist();
-              },
-            ),
+        const SizedBox(height: 13),
+        const Text(
+          'LTJ3 TEXTURE STUDIO',
+          style: TextStyle(
+            color: silver,
+            fontSize: 11,
+            letterSpacing: 2,
           ),
-      ],
-    );
-  }
-
-  Widget textureList() {
-    return Column(
-      children: [
+        ),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 56,
+          height: 58,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: textures.length,
-            itemBuilder: (context, i) => pill(
-              textures[i],
-              settings.texture == i,
-              () {
-                if (busy) return;
-
-                setState(() => settings.texture = i);
-                refreshPreview();
-              },
-            ),
+            itemCount: textureNames.length,
+            itemBuilder: (context, i) {
+              return Padding(
+                padding: const EdgeInsets.all(4),
+                child: ChoiceChip(
+                  label: Text(textureNames[i]),
+                  selected: settings.texture == i,
+                  onSelected: busy
+                      ? null
+                      : (_) {
+                          setState(() {
+                            settings.texture = i;
+                          });
+                          updatePreview();
+                        },
+                ),
+              );
+            },
           ),
         ),
-        adjust(
+        adjustment(
           'Texture',
           settings.textureAmount,
-          0, 1,
+          0,
+          1,
           (v) => settings.textureAmount = v,
         ),
       ],
     );
   }
 
+  Widget customFiltersPanel() {
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: saveCustomFilter,
+          icon: const Icon(Icons.bookmark_add),
+          label: const Text('CREATE YOUR FILTER'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (savedFilters.isEmpty)
+          const Text(
+            'Your custom filters will appear here.',
+            style: TextStyle(color: silver),
+          ),
+        for (final name in savedFilters.keys.toList())
+          ListTile(
+            leading: const Icon(Icons.auto_awesome),
+            title: Text(name),
+            subtitle: const Text('CUSTOM LTJ3 LOOK'),
+            onTap: () {
+              if (busy) return;
+
+              setState(() {
+                settings = savedFilters[name]!.copy();
+              });
+
+              updatePreview();
+            },
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () {
+                setState(() {
+                  savedFilters.remove(name);
+                });
+
+                persistFilters();
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget controls() {
-    switch (section) {
+    switch (selectedTab) {
       case 'Filters':
-        return filterList();
+        return filtersPanel();
 
       case 'My Filters':
-        return customList();
+        return customFiltersPanel();
 
       case 'Texture':
-        return textureList();
+        return texturePanel();
 
       case 'Light':
         return Column(
           children: [
-            adjust('Exposure', settings.exposure, -.8, .8,
-                (v) => settings.exposure = v),
-            adjust('Contrast', settings.contrast, -.5, .5,
-                (v) => settings.contrast = v),
-            adjust('Highlights', settings.highlights, -1, 1,
-                (v) => settings.highlights = v),
-            adjust('Shadows', settings.shadows, -1, 1,
-                (v) => settings.shadows = v),
+            adjustment(
+              'Exposure',
+              settings.exposure,
+              -.85,
+              .85,
+              (v) => settings.exposure = v,
+            ),
+            adjustment(
+              'Contrast',
+              settings.contrast,
+              -.5,
+              .5,
+              (v) => settings.contrast = v,
+            ),
+            adjustment(
+              'Highlights',
+              settings.highlights,
+              -1,
+              1,
+              (v) => settings.highlights = v,
+            ),
+            adjustment(
+              'Shadows',
+              settings.shadows,
+              -1,
+              1,
+              (v) => settings.shadows = v,
+            ),
           ],
         );
 
       case 'Color':
         return Column(
           children: [
-            adjust('Saturation', settings.saturation, -1, 1,
-                (v) => settings.saturation = v),
-            adjust('Temperature', settings.temperature, -.5, .5,
-                (v) => settings.temperature = v),
-            adjust('Fade', settings.fade, 0, .5,
-                (v) => settings.fade = v),
+            adjustment(
+              'Saturation',
+              settings.saturation,
+              -1,
+              1,
+              (v) => settings.saturation = v,
+            ),
+            adjustment(
+              'Warmth',
+              settings.warmth,
+              -.45,
+              .45,
+              (v) => settings.warmth = v,
+            ),
+            adjustment(
+              'Fade',
+              settings.fade,
+              0,
+              .5,
+              (v) => settings.fade = v,
+            ),
           ],
         );
 
       case 'Details':
         return Column(
           children: [
-            adjust('Sharpen', settings.sharpen, 0, 1,
-                (v) => settings.sharpen = v),
-            adjust('Vignette', settings.vignette, -1, 1,
-                (v) => settings.vignette = v),
+            adjustment(
+              'Sharpen',
+              settings.sharpen,
+              0,
+              1,
+              (v) => settings.sharpen = v,
+            ),
+            adjustment(
+              'Vignette',
+              settings.vignette,
+              -1,
+              1,
+              (v) => settings.vignette = v,
+            ),
           ],
         );
 
       default:
-        return const SizedBox();
+        return const SizedBox.shrink();
     }
   }
 
-  Widget welcome() {
+  Widget welcomeScreen() {
     return Scaffold(
+      backgroundColor: black,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(30),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 30,
+          ),
           child: Column(
             children: [
-              const SizedBox(height: 35),
+              const SizedBox(height: 45),
               const Text(
                 'LTJ3 / CREATIVE STUDIO',
                 style: TextStyle(
-                  letterSpacing: 4,
                   color: silver,
+                  letterSpacing: 4,
+                  fontSize: 11,
                 ),
               ),
               const Spacer(),
               const Icon(
                 Icons.auto_awesome,
-                size: 32,
                 color: silver,
+                size: 30,
               ),
               const SizedBox(height: 20),
               const Text(
                 'LTJ3',
                 style: TextStyle(
-                  fontSize: 78,
                   fontFamily: 'Georgia',
+                  fontSize: 78,
                   fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 4,
                 ),
               ),
               const Text(
                 'E D I T O R',
                 style: TextStyle(
+                  fontSize: 15,
                   letterSpacing: 5,
                   color: silver,
                 ),
               ),
               const SizedBox(height: 30),
+              Container(
+                width: 70,
+                height: 1,
+                color: Colors.white38,
+              ),
+              const SizedBox(height: 28),
               const Text(
-                'CREATE YOUR OWN VISION',
+                'CREATE YOUR OWN VISION.',
                 style: TextStyle(
+                  color: silver,
                   letterSpacing: 3,
-                  fontSize: 11,
+                  fontSize: 12,
                 ),
               ),
               const Spacer(),
@@ -981,15 +1221,30 @@ class _EditorState extends State<Editor> {
                 height: 58,
                 child: FilledButton(
                   onPressed: () {
-                    setState(() => started = true);
+                    setState(() {
+                      started = true;
+                    });
                   },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                  ),
                   child: const Text(
                     'Get Started  →',
                     style: TextStyle(fontSize: 18),
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 28),
+              const Text(
+                'CREATE · REFINE · EXPORT',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: silver,
+                  letterSpacing: 3,
+                ),
+              ),
+              const SizedBox(height: 35),
             ],
           ),
         ),
@@ -997,7 +1252,7 @@ class _EditorState extends State<Editor> {
     );
   }
 
-  Widget gallery() {
+  Widget galleryScreen() {
     return Column(
       children: [
         Padding(
@@ -1007,7 +1262,10 @@ class _EditorState extends State<Editor> {
               const Expanded(
                 child: Text(
                   'Your Studio',
-                  style: TextStyle(fontSize: 29),
+                  style: TextStyle(
+                    fontSize: 29,
+                    fontFamily: 'Georgia',
+                  ),
                 ),
               ),
               TextButton.icon(
@@ -1019,12 +1277,12 @@ class _EditorState extends State<Editor> {
           ),
         ),
         Expanded(
-          child: photos.isEmpty
+          child: library.isEmpty
               ? Center(
                   child: FilledButton.icon(
                     onPressed: importPhoto,
                     icon: const Icon(
-                      Icons.add_photo_alternate,
+                      Icons.add_photo_alternate_outlined,
                     ),
                     label: const Text('Import Photos'),
                   ),
@@ -1036,22 +1294,23 @@ class _EditorState extends State<Editor> {
                     mainAxisSpacing: 3,
                     crossAxisSpacing: 3,
                   ),
-                  itemCount: photos.length,
-                  itemBuilder: (context, i) =>
-                      GestureDetector(
-                    onTap: () => openPhoto(photos[i]),
-                    child: Image.memory(
-                      photos[i],
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+                  itemCount: library.length,
+                  itemBuilder: (context, i) {
+                    return GestureDetector(
+                      onTap: () => openPhoto(library[i]),
+                      child: Image.memory(
+                        library[i],
+                        fit: BoxFit.cover,
+                      ),
+                    );
+                  },
                 ),
         ),
       ],
     );
   }
 
-  Widget editorView() {
+  Widget editorScreen() {
     return Column(
       children: [
         Expanded(
@@ -1068,20 +1327,25 @@ class _EditorState extends State<Editor> {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  if ((comparing ? before : preview) != null)
+                  if ((comparing
+                          ? beforeImage
+                          : afterImage) !=
+                      null)
                     InteractiveViewer(
                       minScale: .5,
                       maxScale: 5,
                       child: Image.memory(
-                        (comparing ? before : preview)!,
+                        (comparing
+                            ? beforeImage
+                            : afterImage)!,
                         fit: BoxFit.contain,
                         gaplessPlayback: true,
                       ),
                     ),
                   if (busy)
                     const Positioned(
-                      right: 12,
                       top: 12,
+                      right: 12,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                       ),
@@ -1092,11 +1356,11 @@ class _EditorState extends State<Editor> {
           ),
         ),
         Container(
-          color: dark,
+          color: panel,
           child: Column(
             children: [
               SizedBox(
-                height: 58,
+                height: 60,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
@@ -1108,35 +1372,33 @@ class _EditorState extends State<Editor> {
                       'Details',
                       'Texture',
                     ])
-                      pill(
-                        name,
-                        section == name,
-                        () => setState(() => section = name),
-                      ),
+                      tabButton(name),
                   ],
                 ),
               ),
               SizedBox(
-                height: 245,
+                height: 252,
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(8),
                   child: controls(),
                 ),
               ),
+              const Divider(color: tile, height: 1),
               Row(
                 mainAxisAlignment:
                     MainAxisAlignment.spaceEvenly,
                 children: [
-                  TextButton(
+                  TextButton.icon(
                     onPressed: busy
                         ? null
                         : () {
                             setState(() {
-                              settings = Settings();
+                              settings = PhotoSettings();
                             });
-                            refreshPreview();
+                            updatePreview();
                           },
-                    child: const Text('Reset'),
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Reset'),
                   ),
                   const Text(
                     'HOLD TO COMPARE',
@@ -1145,9 +1407,12 @@ class _EditorState extends State<Editor> {
                       color: silver,
                     ),
                   ),
-                  TextButton(
-                    onPressed: busy ? null : exportOptions,
-                    child: const Text('Export'),
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : showExportMenu,
+                    icon: const Icon(Icons.ios_share),
+                    label: const Text('Export'),
                   ),
                 ],
               ),
@@ -1160,34 +1425,40 @@ class _EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    if (!started) return welcome();
+    if (!started) {
+      return welcomeScreen();
+    }
 
     return Scaffold(
       appBar: AppBar(
-        centerTitle: true,
         backgroundColor: black,
+        centerTitle: true,
         title: const Text(
           'LTJ3 EDITOR',
           style: TextStyle(
-            letterSpacing: 3,
             fontSize: 18,
+            letterSpacing: 3,
           ),
         ),
         leading: IconButton(
           onPressed: () {
-            setState(() => editing = false);
+            setState(() {
+              editing = false;
+            });
           },
           icon: const Icon(Icons.arrow_back_ios_new),
         ),
         actions: [
           if (editing)
             IconButton(
-              onPressed: busy ? null : exportOptions,
+              onPressed: busy ? null : showExportMenu,
               icon: const Icon(Icons.ios_share),
             ),
         ],
       ),
-      body: editing ? editorView() : gallery(),
+      body: editing
+          ? editorScreen()
+          : galleryScreen(),
     );
   }
 }
