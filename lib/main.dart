@@ -1,484 +1,432 @@
 
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+// LTJ3 EDITOR — NEBULA EDITION
+// Replace lib/main.dart only. All photo processing happens on the device.
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as im;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
-// LTJ3 EDITOR V9
-// Flutter Web photo editing studio.
-
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const LTJ3App());
+  runApp(const NebulaApp());
 }
 
-const bg = Color(0xFF090B0C);
-const panel = Color(0xFF181C1E);
-const cardColor = Color(0xFF252B2D);
-const accent = Color(0xFF69D6C5);
-const silver = Color(0xFFCED3D3);
-const muted = Color(0xFF8D999A);
+const ink = Color(0xFF05090B);
+const surface = Color(0xFF111A1D);
+const raised = Color(0xFF1C282C);
+const mint = Color(0xFF55EAD8);
+const soft = Color(0xFFC5D5D7);
+const dim = Color(0xFF829699);
 
-double clampValue(num value, double min, double max) {
-  return value.clamp(min, max).toDouble();
+double cap(num x, [double low = 0, double high = 1]) => x.clamp(low, high).toDouble();
+
+class Signature {
+  final String name;
+  final double light, contrast, saturation, warmth, fade, blueShadows, goldHighlights;
+  const Signature(this.name, this.light, this.contrast, this.saturation,
+      this.warmth, this.fade, this.blueShadows, this.goldHighlights);
 }
 
-class Look {
-  final double light;
-  final double contrast;
-  final double saturation;
-  final double warmth;
-  final double fade;
-
-  const Look(
-    this.light,
-    this.contrast,
-    this.saturation,
-    this.warmth,
-    this.fade,
-  );
-}
-
-const looks = <Look>[
-  Look(.08, .15, .22, .07, 0),
-  Look(-.13, .27, -.24, -.12, .01),
-  Look(.12, .11, .31, .13, 0),
-  Look(.05, -.13, -.23, -.09, .13),
-  Look(-.17, .31, -.13, -.07, 0),
-  Look(.17, -.15, -.17, .17, .12),
-  Look(.07, .23, .36, .07, 0),
-  Look(-.10, .18, -.35, -.15, .03),
-  Look(.02, .28, -1, 0, 0),
-  Look(-.13, .27, -.24, .13, .03),
-  Look(.13, .20, .21, .10, 0),
-  Look(-.08, -.11, -.43, .16, .17),
-  Look(-.16, .22, -.36, -.19, .03),
-  Look(.15, .16, .19, .20, 0),
-  Look(-.20, .33, -.38, -.13, 0),
-  Look(.05, .32, -1, 0, 0),
-  Look(-.07, .25, .28, -.14, 0),
-  Look(.15, -.17, -.30, .05, .16),
-  Look(-.12, .21, -.72, -.09, .04),
-  Look(-.09, .35, .13, .15, 0),
+// Every signature uses a different color recipe and tonal curve.
+const signatures = <Signature>[
+  Signature('EMBER DRIVE', .09, .23, .32, .24, .01, -.06, .23),
+  Signature('CYAN PULSE', -.04, .32, .32, -.20, 0, .37, -.04),
+  Signature('GOLDEN VELVET', .06, .12, .18, .24, .12, -.08, .34),
+  Signature('MIDNIGHT POP', -.17, .41, .34, -.14, .01, .32, .13),
+  Signature('LTJ3 NOIR', -.03, .39, -1, 0, 0, 0, 0),
+  Signature('SOLAR FLARE', .18, .09, .25, .28, .09, -.07, .39),
+  Signature('VIOLET HOUR', -.10, .22, .19, -.14, .07, .34, .06),
+  Signature('COCOA FILM', -.08, .19, -.36, .26, .15, -.12, .20),
+  Signature('ARCTIC GLASS', .12, .16, -.14, -.27, .05, .40, -.13),
+  Signature('REDLINE', -.08, .35, .45, .19, 0, -.09, .29),
+  Signature('VELVET FADE', .12, -.19, -.24, .16, .28, .05, .09),
+  Signature('STREET CHROME', -.14, .45, -.23, -.11, 0, .20, -.01),
+  Signature('DESERT GOLD', .05, .20, .25, .30, .08, -.21, .31),
+  Signature('MOON DUST', -.13, .30, -.63, -.19, .09, .29, -.13),
+  Signature('NEON NIGHTS', -.13, .40, .56, -.12, 0, .42, .19),
+  Signature('SOFT PEARL', .20, -.22, -.30, .06, .26, .10, .11),
+  Signature('FOREST CODE', -.11, .29, .07, -.20, .03, .18, -.18),
+  Signature('MARS 35', -.15, .33, .31, .27, .02, -.19, .42),
+  Signature('SILVER GHOST', .09, .22, -.96, -.03, .16, .08, .01),
+  Signature('AFTER DARK', -.23, .45, .07, -.05, .02, .29, .16),
 ];
 
-const textureNames = [
-  'NONE',
-  'FINE GRAIN',
-  'FILM HAZE',
-  'GOLDEN GLOW',
-  'COOL LIGHT',
-  'ROSE GLOW',
-  'SOFT BOKEH',
+const textureLabels = <String>[
+  'NONE', 'FINE GRAIN', 'DUST STORM', 'NEON LEAK', 'PRISM FOG',
+  'STARDUST', 'AMBER EDGE', 'COBALT EDGE', 'ROSE GLOW', 'SUNSET FILM',
+  'SOFT BOKEH', 'GOLDEN BOKEH', 'BLUE BOKEH', 'FROST HAZE',
+  'VINTAGE DUST', 'GOLD MIST', 'PURPLE MIST', 'LIGHT WINDOW',
+  'FILM WASH', 'MONO GRAIN',
 ];
 
-class EditorValues {
-  EditorValues();
-
+class Edits {
+  Edits();
   int filter = -1;
   int texture = 0;
   double intensity = 1;
   double exposure = 0;
   double contrast = 0;
   double saturation = 0;
-  double temperature = 0;
+  double warmth = 0;
   double highlights = 0;
   double shadows = 0;
+  double fade = 0;
   double sharpen = 0;
   double vignette = 0;
-  double texturePower = .6;
+  double textureAmount = .65;
+  double clarity = 0;
+  double vibrance = 0;
+  double grain = 0;
 
-  EditorValues copy() => EditorValues()
-    ..filter = filter
-    ..texture = texture
-    ..intensity = intensity
-    ..exposure = exposure
-    ..contrast = contrast
-    ..saturation = saturation
-    ..temperature = temperature
-    ..highlights = highlights
-    ..shadows = shadows
-    ..sharpen = sharpen
-    ..vignette = vignette
-    ..texturePower = texturePower;
+  Edits copy() => Edits()
+    ..filter = filter ..texture = texture ..intensity = intensity
+    ..exposure = exposure ..contrast = contrast ..saturation = saturation
+    ..warmth = warmth ..highlights = highlights ..shadows = shadows
+    ..fade = fade ..sharpen = sharpen ..vignette = vignette
+    ..textureAmount = textureAmount ..clarity = clarity
+    ..vibrance = vibrance ..grain = grain;
 
   Map<String, dynamic> toJson() => {
-    'filter': filter,
-    'texture': texture,
-    'intensity': intensity,
-    'exposure': exposure,
-    'contrast': contrast,
-    'saturation': saturation,
-    'temperature': temperature,
-    'highlights': highlights,
-    'shadows': shadows,
-    'sharpen': sharpen,
-    'vignette': vignette,
-    'texturePower': texturePower,
+    'filter': filter, 'texture': texture, 'intensity': intensity,
+    'exposure': exposure, 'contrast': contrast, 'saturation': saturation,
+    'warmth': warmth, 'highlights': highlights, 'shadows': shadows,
+    'fade': fade, 'sharpen': sharpen, 'vignette': vignette,
+    'textureAmount': textureAmount, 'clarity': clarity,
+    'vibrance': vibrance, 'grain': grain,
   };
 
-  factory EditorValues.fromJson(Map<String, dynamic> data) {
-    double read(String key, double fallback) {
-      final value = data[key];
-      return value is num ? value.toDouble() : fallback;
-    }
+  factory Edits.fromJson(Map<String, dynamic> v) {
+    double read(String a, double fallback) =>
+        v[a] is num ? (v[a] as num).toDouble() : fallback;
 
-    return EditorValues()
+    // Older LTJ3 filters used strength, temperature, texturePower.
+    return Edits()
       ..filter = read('filter', -1).toInt()
       ..texture = read('texture', 0).toInt()
-      ..intensity = read('intensity', 1)
+      ..intensity = read('intensity', read('strength', 1))
       ..exposure = read('exposure', 0)
       ..contrast = read('contrast', 0)
       ..saturation = read('saturation', 0)
-      ..temperature = read('temperature', 0)
+      ..warmth = read('warmth', read('temperature', 0))
       ..highlights = read('highlights', 0)
       ..shadows = read('shadows', 0)
+      ..fade = read('fade', 0)
       ..sharpen = read('sharpen', 0)
       ..vignette = read('vignette', 0)
-      ..texturePower = read('texturePower', .6);
+      ..textureAmount = read('textureAmount', read('texturePower', .65))
+      ..clarity = read('clarity', 0)
+      ..vibrance = read('vibrance', 0)
+      ..grain = read('grain', 0);
   }
 }
 
-double noise(int x, int y, int seed) {
-  final n = math.sin(
-    x * 12.9898 + y * 78.233 + seed * 19.19,
-  ) * 43758.5453;
+double rnd(int x, int y, int seed) {
+  final n = math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
   return n - n.floorToDouble();
 }
 
-double glow(double dx, double dy, double radius) {
-  return math.exp(
-    -(dx * dx + dy * dy) / (2 * radius * radius),
-  );
-}
+double glow(double dx, double dy, double radius) =>
+    math.exp(-(dx * dx + dy * dy) / (2 * radius * radius));
 
-im.Image resizeImage(im.Image image, int size) {
-  if (math.max(image.width, image.height) <= size) {
-    return im.copyResize(
-      image,
-      width: image.width,
-      height: image.height,
-    );
+im.Image scaled(im.Image src, int longest) {
+  if (math.max(src.width, src.height) <= longest) {
+    return im.copyResize(src, width: src.width, height: src.height);
   }
-
-  return image.width >= image.height
-      ? im.copyResize(image, width: size)
-      : im.copyResize(image, height: size);
+  return src.width >= src.height
+      ? im.copyResize(src, width: longest)
+      : im.copyResize(src, height: longest);
 }
 
-im.Image applyEdit(im.Image source, EditorValues e) {
-  final preset = e.filter >= 0 &&
-          e.filter < looks.length
-      ? looks[e.filter]
-      : null;
+im.Image render(im.Image src, Edits e) {
+  final sig = e.filter >= 0 && e.filter < signatures.length
+      ? signatures[e.filter] : null;
+  final level = e.intensity;
+  final ex = cap(e.exposure + (sig?.light ?? 0) * level, -.85, .85);
+  final ct = cap(1 + e.contrast + (sig?.contrast ?? 0) * level, .45, 1.75);
+  final st = cap(1 + e.saturation + (sig?.saturation ?? 0) * level, 0, 2);
+  final wt = cap(e.warmth + (sig?.warmth ?? 0) * level, -.6, .6);
+  final fd = cap(e.fade + (sig?.fade ?? 0) * level, 0, .6);
+  final blue = (sig?.blueShadows ?? 0) * level;
+  final gold = (sig?.goldHighlights ?? 0) * level;
+  final gain = math.pow(2, ex).toDouble();
+  final out = src.convert(format: im.Format.uint8, numChannels: 3);
+  final w = out.width.toDouble(), h = out.height.toDouble();
 
-  final exposure = clampValue(
-    e.exposure + (preset?.light ?? 0) * e.intensity,
-    -.75,
-    .75,
-  );
+  for (final p in out) {
+    final nx = p.x / w, ny = p.y / h;
+    double r = p.r / 255, g = p.g / 255, b = p.b / 255;
 
-  final contrast = clampValue(
-    1 + e.contrast +
-        (preset?.contrast ?? 0) * e.intensity,
-    .55,
-    1.55,
-  );
+    final lum = cap(.2126 * r + .7152 * g + .0722 * b);
+    final sw = (1 - lum) * (1 - lum), hw = lum * lum;
+    final tone = e.shadows * sw * .23 + e.highlights * hw * .20;
 
-  final saturation = clampValue(
-    1 + e.saturation +
-        (preset?.saturation ?? 0) * e.intensity,
-    0,
-    1.8,
-  );
+    r = (r * gain + tone + wt * .19 - .5) * ct + .5;
+    g = (g * gain + tone - .5) * ct + .5;
+    b = (b * gain + tone - wt * .19 - .5) * ct + .5;
 
-  final warmth = clampValue(
-    e.temperature +
-        (preset?.warmth ?? 0) * e.intensity,
-    -.3,
-    .3,
-  );
-
-  final fade = clampValue(
-    (preset?.fade ?? 0) * e.intensity,
-    0,
-    .3,
-  );
-
-  final gain = math.pow(2, exposure).toDouble();
-
-  final out = source.convert(
-    format: im.Format.uint8,
-    numChannels: 3,
-  );
-
-  final width = out.width.toDouble();
-  final height = out.height.toDouble();
-
-  for (final pixel in out) {
-    final x = pixel.x;
-    final y = pixel.y;
-    final nx = x / width;
-    final ny = y / height;
-
-    double r = pixel.r / 255;
-    double g = pixel.g / 255;
-    double b = pixel.b / 255;
-
-    final luminance = clampValue(
-      .2126 * r + .7152 * g + .0722 * b,
-      0,
-      1,
-    );
-
-    final shadowWeight =
-        (1 - luminance) * (1 - luminance);
-    final highlightWeight = luminance * luminance;
-
-    final tone =
-        e.shadows * shadowWeight * .21 +
-        e.highlights * highlightWeight * .19;
-
-    r = (r * gain + tone + warmth * .17 - .5) *
-            contrast +
-        .5;
-    g = (g * gain + tone - .5) * contrast + .5;
-    b = (b * gain + tone - warmth * .17 - .5) *
-            contrast +
-        .5;
+    // Signature split-toning gives a distinct color identity.
+    r += gold * hw * .22 - blue * sw * .11;
+    g += gold * hw * .09 + blue * sw * .12;
+    b -= gold * hw * .14 - blue * sw * .25;
 
     final gray = .2126 * r + .7152 * g + .0722 * b;
+    final vib = 1 +
+        e.vibrance * (1 - cap((r - g).abs() + (b - g).abs()));
+    final saturation = st * vib;
 
     r = gray + (r - gray) * saturation;
     g = gray + (g - gray) * saturation;
     b = gray + (b - gray) * saturation;
 
-    r = r * (1 - fade) + fade * .5;
-    g = g * (1 - fade) + fade * .5;
-    b = b * (1 - fade) + fade * .5;
+    r = r * (1 - fd) + fd * .54;
+    g = g * (1 - fd) + fd * .52;
+    b = b * (1 - fd) + fd * .49;
 
-    final dx = (nx - .5) * 2;
-    final dy = (ny - .5) * 2;
-    final distance = clampValue(
+    final dx = (nx - .5) * 2, dy = (ny - .5) * 2;
+    final edge = cap(
       math.sqrt(dx * dx + dy * dy) / math.sqrt2,
-      0,
-      1,
     );
+    final shade = 1 - e.vignette * edge * edge * .64;
+    r *= shade;
+    g *= shade;
+    b *= shade;
 
-    final vignette =
-        1 - e.vignette * distance * distance * .65;
+    final amt = e.textureAmount;
+    final tex = e.texture;
 
-    r *= vignette;
-    g *= vignette;
-    b *= vignette;
-
-    final power = e.texturePower;
-
-    if (e.texture == 1) {
-      final grain = (noise(x, y, 7) - .5) *
-          power *
-          .14;
-      r += grain;
-      g += grain;
-      b += grain;
+    if (tex == 1 ||
+        tex == 2 ||
+        tex == 5 ||
+        tex == 14 ||
+        tex == 19 ||
+        e.grain > 0) {
+      final fine = (rnd(p.x, p.y, 31) - .5) *
+          ((tex == 1 || tex == 19
+                  ? .075
+                  : tex == 2
+                      ? .055
+                      : .028) *
+              amt +
+              e.grain * .065);
+      r += fine;
+      g += fine;
+      b += fine;
     }
 
-    if (e.texture == 2) {
-      final haze =
-          glow(nx - .5, ny - .55, .6) * power * .22;
-      r = r * (1 - haze) + .82 * haze;
-      g = g * (1 - haze) + .79 * haze;
-      b = b * (1 - haze) + .76 * haze;
-    }
-
-    if (e.texture >= 3 && e.texture <= 5) {
-      final cx = e.texture == 3
-          ? -.15
-          : e.texture == 4
-              ? 1.15
-              : .45;
-      final cy = e.texture == 5 ? -.15 : .5;
-
-      final alpha = clampValue(
-        glow(nx - cx, ny - cy, .5) * power * .5,
-        0,
-        .48,
-      );
-
-      final cr = e.texture == 4 ? .3 : 1.0;
-      final cg = e.texture == 4 ? .65 : .55;
-      final cb = e.texture == 4
-          ? 1.0
-          : e.texture == 5
-              ? .75
-              : .2;
-
-      r = r * (1 - alpha) + cr * alpha;
-      g = g * (1 - alpha) + cg * alpha;
-      b = b * (1 - alpha) + cb * alpha;
-    }
-
-    if (e.texture == 6) {
-      double bokeh = 0;
-
-      for (int i = 0; i < 7; i++) {
-        final bx = noise(i, 2, 17);
-        final by = noise(i, 4, 27);
-        final radius = .03 + noise(i, 8, 9) * .07;
-
-        bokeh += glow(
-          nx - bx,
-          ny - by,
-          radius,
-        ) * .16;
+    if (tex == 2 || tex == 5 || tex == 14) {
+      final dust = rnd(p.x ~/ 3, p.y ~/ 3, 43);
+      if (dust > .996 - amt * .004) {
+        final alpha = amt * (tex == 2 ? .24 : .17);
+        r += alpha;
+        g += alpha;
+        b += alpha;
       }
-
-      final alpha =
-          clampValue(bokeh * power, 0, .3);
-
-      r = r * (1 - alpha) + alpha;
-      g = g * (1 - alpha) + alpha * .88;
-      b = b * (1 - alpha) + alpha * .74;
     }
 
-    pixel.r = (clampValue(r, 0, 1) * 255).round();
-    pixel.g = (clampValue(g, 0, 1) * 255).round();
-    pixel.b = (clampValue(b, 0, 1) * 255).round();
+    if (tex == 3 ||
+        tex == 6 ||
+        tex == 7 ||
+        tex == 8 ||
+        tex == 9 ||
+        tex == 17) {
+      final right = tex == 7 || tex == 8;
+      final centerX = right ? 1.12 : -.14;
+      final centerY = tex == 17 ? -.18 : .41;
+      final light = cap(
+        glow(
+              nx - centerX,
+              ny - centerY,
+              tex == 17 ? .4 : .6,
+            ) *
+            amt *
+            .65,
+      );
+      final cr = tex == 7
+          ? .22
+          : tex == 8
+              ? 1.0
+              : tex == 3
+                  ? .15
+                  : 1.0;
+      final cg = tex == 7
+          ? .58
+          : tex == 8
+              ? .35
+              : tex == 3
+                  ? .82
+                  : tex == 9
+                      ? .42
+                      : .68;
+      final cb = tex == 7
+          ? 1.0
+          : tex == 8
+              ? .63
+              : tex == 3
+                  ? .75
+                  : .17;
+
+      r = r * (1 - light) + cr * light;
+      g = g * (1 - light) + cg * light;
+      b = b * (1 - light) + cb * light;
+    }
+
+    if (tex == 4 ||
+        tex == 13 ||
+        tex == 15 ||
+        tex == 16 ||
+        tex == 18) {
+      final haze =
+          glow(nx - .5, ny - .55, .65) * amt * .28;
+      final cr = tex == 16 ? .62 : tex == 15 ? .9 : .77;
+      final cg = tex == 16 ? .45 : tex == 13 ? .88 : .76;
+      final cb = tex == 16 ? .95 : tex == 13 ? 1.0 : .66;
+
+      r = r * (1 - haze) + cr * haze;
+      g = g * (1 - haze) + cg * haze;
+      b = b * (1 - haze) + cb * haze;
+    }
+
+    if (tex == 10 || tex == 11 || tex == 12) {
+      for (int i = 0; i < 7; i++) {
+        final bx = rnd(i, 13, 3), by = rnd(i, 9, 4);
+        final radius = .017 + rnd(i, 5, 7) * .043;
+        final dot = glow(
+              nx - bx,
+              ny - by,
+              radius,
+            ) *
+            amt *
+            .18;
+        r += dot * (tex == 12 ? .35 : 1);
+        g += dot * (tex == 12 ? .65 : .83);
+        b += dot * (tex == 12 ? 1 : .57);
+      }
+    }
+
+    p.r = (cap(r) * 255).round();
+    p.g = (cap(g) * 255).round();
+    p.b = (cap(b) * 255).round();
   }
 
-  if (e.sharpen > 0) {
+  if (e.sharpen > .01 || e.clarity > .01) {
     final blurred = im.gaussianBlur(out, radius: 1);
-    final amount = e.sharpen * .55;
-
+    final amount = e.sharpen * .48 + e.clarity * .22;
     for (final p in out) {
-      final q = blurred.getPixel(p.x, p.y);
-
-      p.r = clampValue(
-        p.r + (p.r - q.r) * amount,
+      final b = blurred.getPixel(p.x, p.y);
+      p.r = cap(
+        p.r + (p.r - b.r) * amount,
         0,
         255,
       ).round();
-
-      p.g = clampValue(
-        p.g + (p.g - q.g) * amount,
+      p.g = cap(
+        p.g + (p.g - b.g) * amount,
         0,
         255,
       ).round();
-
-      p.b = clampValue(
-        p.b + (p.b - q.b) * amount,
+      p.b = cap(
+        p.b + (p.b - b.b) * amount,
         0,
         255,
       ).round();
     }
   }
-
   return out;
 }
 
-class LTJ3App extends StatelessWidget {
-  const LTJ3App({super.key});
+class NebulaApp extends StatelessWidget {
+  const NebulaApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'LTJ3 EDITOR',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: bg,
-        colorScheme: const ColorScheme.dark(
-          primary: accent,
-          onPrimary: Color(0xFF061715),
-          surface: panel,
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'LTJ3 EDITOR',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData.dark(useMaterial3: true).copyWith(
+          scaffoldBackgroundColor: ink,
+          colorScheme: const ColorScheme.dark(
+            primary: mint,
+            onPrimary: ink,
+            surface: surface,
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: ink,
+            foregroundColor: Colors.white,
+          ),
+          sliderTheme: const SliderThemeData(
+            activeTrackColor: mint,
+            inactiveTrackColor: Color(0xFF314449),
+            thumbColor: mint,
+            trackHeight: 3,
+          ),
         ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: bg,
-          foregroundColor: Colors.white,
-        ),
-        sliderTheme: const SliderThemeData(
-          activeTrackColor: accent,
-          thumbColor: accent,
-          inactiveTrackColor: Color(0xFF465254),
-          trackHeight: 3,
-        ),
-      ),
-      home: const Studio(),
-    );
-  }
+        home: const NebulaStudio(),
+      );
 }
 
-class Studio extends StatefulWidget {
-  const Studio({super.key});
+class NebulaStudio extends StatefulWidget {
+  const NebulaStudio({super.key});
 
   @override
-  State<Studio> createState() => _StudioState();
+  State<NebulaStudio> createState() => _NebulaStudioState();
 }
 
-class _StudioState extends State<Studio> {
+class _NebulaStudioState extends State<NebulaStudio> {
   final picker = ImagePicker();
-
   final photos = <Uint8List>[];
-  final saved = <String, EditorValues>{};
+  final saved = <String, Edits>{};
+  final thumb = <Uint8List>[];
+  final customThumb = <String, Uint8List>{};
+  final textureThumb = <Uint8List>[];
 
-  EditorValues edit = EditorValues();
-
-  im.Image? original;
-  im.Image? previewSource;
-
-  Uint8List? before;
-  Uint8List? after;
-
-  final thumbnails = <Uint8List>[];
-  final customThumbs = <String, Uint8List>{};
+  Edits edits = Edits();
+  im.Image? original, previewSource;
+  Uint8List? before, after;
 
   bool started = false;
-  bool editing = false;
-  bool busy = false;
+  bool editorOpen = false;
+  bool processing = false;
   bool comparing = false;
 
-  String tab = 'Filters';
-  bool pngExport = false;
+  String section = 'Filters';
+  int sequence = 0;
 
   @override
   void initState() {
     super.initState();
-    loadFilters();
+    loadSaved();
   }
 
-  void notice(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+  void toast(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    }
   }
 
-  void loadFilters() {
+  void loadSaved() {
+    // Preserve V9 custom filters.
     try {
-      final value =
+      final raw =
           html.window.localStorage['ltj3_v9_filters'];
+      if (raw == null) return;
 
-      if (value == null) return;
-
-      final data = jsonDecode(value) as Map;
-
-      for (final entry in data.entries) {
-        saved[entry.key.toString()] =
-            EditorValues.fromJson(
+      final json = jsonDecode(raw) as Map;
+      for (final entry in json.entries) {
+        saved[entry.key.toString()] = Edits.fromJson(
           Map<String, dynamic>.from(entry.value as Map),
         );
       }
     } catch (_) {
-      saved.clear();
+      // Ignore damaged browser storage.
     }
   }
 
-  void persistFilters() {
+  void storeSaved() {
     try {
       html.window.localStorage['ltj3_v9_filters'] =
           jsonEncode(
@@ -488,28 +436,17 @@ class _StudioState extends State<Studio> {
         ),
       );
     } catch (_) {
-      notice('Could not save filter');
+      toast('Local storage unavailable');
     }
   }
 
-  Uint8List encodePreview(im.Image image) {
-    return Uint8List.fromList(
-      im.encodeJpg(image, quality: 95),
-    );
-  }
-
-  void rebuildCustomThumbnails(im.Image image) {
-    customThumbs.clear();
-
-    for (final entry in saved.entries) {
-      customThumbs[entry.key] = encodePreview(
-        applyEdit(image, entry.value.copy()),
+  Uint8List jpg(im.Image x, [int quality = 96]) =>
+      Uint8List.fromList(
+        im.encodeJpg(x, quality: quality),
       );
-    }
-  }
 
-  Future<void> importPhotos() async {
-    if (busy) return;
+  Future<void> importImages() async {
+    if (processing) return;
 
     try {
       final files = await picker.pickMultiImage(
@@ -518,207 +455,228 @@ class _StudioState extends State<Studio> {
 
       if (files.isEmpty) return;
 
-      final loaded = <Uint8List>[];
+      final incoming = <Uint8List>[];
 
-      for (final file in files) {
-        loaded.add(await file.readAsBytes());
+      for (final f in files) {
+        incoming.add(await f.readAsBytes());
       }
 
       if (!mounted) return;
 
-      setState(() => photos.addAll(loaded));
-
-      if (original == null) {
-        await openPhoto(loaded.first);
-      }
+      setState(() => photos.addAll(incoming));
+      await openImage(incoming.first);
     } catch (_) {
-      notice('Import failed');
+      toast('Unable to import photos');
     }
   }
 
-  Future<void> openPhoto(Uint8List bytes) async {
-    if (busy) return;
+  Future<void> openImage(Uint8List bytes) async {
+    if (processing) return;
 
-    setState(() => busy = true);
+    setState(() => processing = true);
 
     try {
       var decoded = im.decodeImage(bytes);
 
       if (decoded == null) {
-        throw Exception('Unsupported photo');
+        throw StateError('Unsupported format');
       }
 
       decoded = im.bakeOrientation(decoded);
 
-      final large = resizeImage(decoded, 1050);
-      final tiny = resizeImage(decoded, 220);
+      final preview = scaled(decoded, 1500);
+      final small = scaled(decoded, 330);
+      final textureSmall = scaled(decoded, 220);
 
-      final previews = <Uint8List>[];
+      final newThumb = <Uint8List>[jpg(small)];
 
-      previews.add(encodePreview(tiny));
-
-      for (int i = 0; i < looks.length; i++) {
-        final values = EditorValues()..filter = i;
-
-        previews.add(
-          encodePreview(applyEdit(tiny, values)),
+      for (var i = 0; i < signatures.length; i++) {
+        newThumb.add(
+          jpg(
+            render(small, Edits()..filter = i),
+            95,
+          ),
         );
       }
 
-      rebuildCustomThumbnails(tiny);
+      final newCustom = <String, Uint8List>{};
+
+      for (final item in saved.entries) {
+        newCustom[item.key] = jpg(
+          render(small, item.value.copy()),
+          95,
+        );
+      }
+
+      final newTexture = <Uint8List>[];
+
+      for (var i = 0; i < textureLabels.length; i++) {
+        newTexture.add(
+          jpg(
+            render(
+              textureSmall,
+              Edits()..texture = i,
+            ),
+            91,
+          ),
+        );
+      }
 
       if (!mounted) return;
 
       setState(() {
         original = decoded;
-        previewSource = large;
-        before = encodePreview(large);
+        previewSource = preview;
+        before = jpg(preview);
         after = before;
-        thumbnails
+        edits = Edits();
+        section = 'Filters';
+        editorOpen = true;
+
+        thumb
           ..clear()
-          ..addAll(previews);
-        edit = EditorValues();
-        editing = true;
-        tab = 'Filters';
+          ..addAll(newThumb);
+
+        customThumb
+          ..clear()
+          ..addAll(newCustom);
+
+        textureThumb
+          ..clear()
+          ..addAll(newTexture);
       });
     } catch (_) {
-      notice('Unable to open photo');
+      toast('Could not open this photo');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => processing = false);
+      }
     }
   }
 
   Future<void> refresh() async {
-    if (previewSource == null || busy) return;
+    if (previewSource == null || processing) return;
 
-    setState(() => busy = true);
+    final id = ++sequence;
+    setState(() => processing = true);
 
     try {
-      final result = applyEdit(
-        previewSource!,
-        edit.copy(),
+      final bytes = jpg(
+        render(
+          previewSource!,
+          edits.copy(),
+        ),
       );
 
-      final data = encodePreview(result);
-
-      if (mounted) {
-        setState(() => after = data);
+      if (mounted && id == sequence) {
+        setState(() => after = bytes);
       }
     } catch (_) {
-      notice('Preview failed');
+      toast('Preview failed');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => processing = false);
+      }
     }
   }
 
-  void selectFilter(int index) {
-    if (busy) return;
-
-    setState(() => edit.filter = index);
+  void selectFilter(int i) {
+    if (processing) return;
+    setState(() => edits.filter = i);
     refresh();
   }
 
-  Future<void> saveCustomFilter() async {
-    if (original == null || busy) return;
+  void selectTexture(int i) {
+    if (processing) return;
+    setState(() => edits.texture = i);
+    refresh();
+  }
 
-    final controller = TextEditingController();
+  Future<void> nameAndSave() async {
+    if (original == null || processing) {
+      toast('Import a photo first');
+      return;
+    }
+
+    final field = TextEditingController();
 
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: panel,
-        title: const Text('CREATE YOUR FILTER'),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: surface,
+        title: const Text('SAVE YOUR SIGNATURE'),
         content: TextField(
-          controller: controller,
+          controller: field,
           autofocus: true,
-          maxLength: 30,
+          maxLength: 28,
           decoration: const InputDecoration(
-            labelText: 'Filter Name',
-            hintText: 'My Signature',
-            border: OutlineInputBorder(),
+            labelText: 'Filter name',
+            hintText: 'Night Rebel',
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(
-              dialogContext,
-              controller.text.trim(),
+              ctx,
+              field.text.trim(),
             ),
-            child: const Text('Save'),
+            child: const Text('Save Filter'),
           ),
         ],
       ),
     );
 
+    field.dispose();
+
     if (!mounted || name == null || name.isEmpty) {
       return;
     }
 
-    setState(() {
-      saved[name] = edit.copy();
-    });
+    saved[name] = edits.copy();
 
     if (previewSource != null) {
-      final small = resizeImage(previewSource!, 220);
-
-      customThumbs[name] = encodePreview(
-        applyEdit(small, edit.copy()),
+      customThumb[name] = jpg(
+        render(
+          scaled(previewSource!, 330),
+          edits.copy(),
+        ),
       );
     }
 
-    persistFilters();
-    notice('Filter saved: $name');
+    storeSaved();
+
+    setState(() => section = 'Filters');
+    toast('$name saved to your filters');
   }
 
-  void useSavedFilter(String name) {
-    if (busy) return;
+  Future<void> export(bool png) async {
+    if (processing || original == null) return;
 
-    final values = saved[name];
-    if (values == null) return;
-
-    setState(() => edit = values.copy());
-    refresh();
-  }
-
-  void deleteFilter(String name) {
-    setState(() {
-      saved.remove(name);
-      customThumbs.remove(name);
-    });
-
-    persistFilters();
-  }
-
-  Future<void> exportPhoto(bool png) async {
-    if (original == null || busy) return;
-
-    setState(() => busy = true);
+    setState(() => processing = true);
 
     try {
-      final image = applyEdit(
+      final result = render(
         original!,
-        edit.copy(),
+        edits.copy(),
       );
 
-      final data = Uint8List.fromList(
+      final bytes = Uint8List.fromList(
         png
-            ? im.encodePng(image)
-            : im.encodeJpg(image, quality: 100),
+            ? im.encodePng(result)
+            : im.encodeJpg(result, quality: 100),
       );
 
-      final filename = png
-          ? 'LTJ3_EDITOR.png'
-          : 'LTJ3_EDITOR.jpg';
+      final filename =
+          'LTJ3_NEBULA_${DateTime.now().millisecondsSinceEpoch}.${png ? 'png' : 'jpg'}';
 
       await Share.shareXFiles(
         [
           XFile.fromData(
-            data,
+            bytes,
             name: filename,
             mimeType: png
                 ? 'image/png'
@@ -728,330 +686,519 @@ class _StudioState extends State<Studio> {
         fileNameOverrides: [filename],
       );
     } catch (_) {
-      notice('Export failed. Try a smaller photo.');
+      toast(
+        'Export failed — try a smaller image or JPEG',
+      );
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => processing = false);
+      }
     }
   }
 
-  void exportMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: panel,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text('ULTRA HD EXPORT'),
-              subtitle: Text('Original resolution'),
-            ),
-            ListTile(
-              title: const Text('JPEG MAX QUALITY'),
-              onTap: () {
-                Navigator.pop(context);
-                exportPhoto(false);
-              },
-            ),
-            ListTile(
-              title: const Text('PNG LOSSLESS'),
-              onTap: () {
-                Navigator.pop(context);
-                exportPhoto(true);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget chip(
-    String name,
-    bool active,
-    VoidCallback tap,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 7),
-      child: TextButton(
-        onPressed: tap,
-        style: TextButton.styleFrom(
-          foregroundColor:
-              active ? const Color(0xFF061715) : silver,
-          backgroundColor:
-              active ? accent : cardColor,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 15,
-            vertical: 12,
-          ),
-          shape: const StadiumBorder(),
-        ),
-        child: Text(name),
-      ),
-    );
-  }
-
-  Widget slider(
-    String name,
-    double value,
-    double min,
-    double max,
-    ValueChanged<double> change,
-  ) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 92,
-          child: Text(
-            name,
-            style: const TextStyle(
-              fontSize: 12,
-              color: silver,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Slider(
-            value: clampValue(value, min, max),
-            min: min,
-            max: max,
-            onChanged: busy
-                ? null
-                : (v) => setState(() => change(v)),
-            onChangeEnd: (_) => refresh(),
-          ),
-        ),
-        SizedBox(
-          width: 35,
-          child: Text(
-            value.toStringAsFixed(2),
-            style: const TextStyle(
-              fontSize: 10,
-              color: muted,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget filterTile(
-    String name,
-    Uint8List? image,
-    bool selected,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 102,
-        child: Column(
-          children: [
-            Container(
-              width: 94,
-              height: 90,
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(
-                  color: selected ? accent : cardColor,
-                  width: 2,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: image == null
-                  ? const Icon(Icons.auto_awesome)
-                  : Image.memory(
-                      image,
-                      fit: BoxFit.cover,
-                    ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10,
-                color: silver,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget filtersPanel() {
-    return Column(
-      children: [
-        const SizedBox(height: 12),
-        const Text(
-          'LTJ3 SIGNATURE COLLECTION',
-          style: TextStyle(
-            letterSpacing: 2,
-            color: silver,
-            fontSize: 11,
-          ),
-        ),
-        const SizedBox(height: 15),
-        SizedBox(
-          height: 125,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-            ),
+  void exportOptions() => showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: surface,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              GestureDetector(
-                onTap: saveCustomFilter,
-                child: SizedBox(
-                  width: 103,
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 90,
-                        width: 94,
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius:
-                              BorderRadius.circular(9),
-                          border: Border.all(
-                            color: accent,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.add,
-                          color: accent,
-                          size: 35,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      const Text(
-                        'CREATE FILTER',
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
+              const ListTile(
+                title: Text('NEBULA EXPORT'),
+                subtitle: Text(
+                  'Full source resolution when memory permits',
                 ),
               ),
-              for (final name in saved.keys.toList())
-                GestureDetector(
-                  onLongPress: () => deleteFilter(name),
-                  child: filterTile(
-                    name,
-                    customThumbs[name],
-                    false,
-                    () => useSavedFilter(name),
-                  ),
+              ListTile(
+                leading: const Icon(
+                  Icons.image,
+                  color: mint,
                 ),
-              if (thumbnails.isNotEmpty)
-                filterTile(
-                  'ORIGINAL',
-                  thumbnails[0],
-                  edit.filter == -1,
-                  () => selectFilter(-1),
+                title: const Text(
+                  'JPEG — MAX QUALITY',
                 ),
-              for (int i = 0; i < looks.length; i++)
-                if (thumbnails.length > i + 1)
-                  filterTile(
-                    'LTJ3 ${(i + 1).toString().padLeft(2, '0')}',
-                    thumbnails[i + 1],
-                    edit.filter == i,
-                    () => selectFilter(i),
-                  ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  export(false);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.high_quality,
+                  color: mint,
+                ),
+                title: const Text(
+                  'PNG — LOSSLESS',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  export(true);
+                },
+              ),
             ],
           ),
         ),
-        slider(
-          'Intensity',
-          edit.intensity,
-          0,
-          1.5,
-          (v) => edit.intensity = v,
+      );
+
+  BoxDecoration glass({
+    bool highlighted = false,
+    double radius = 20,
+  }) =>
+      BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: highlighted
+              ? [
+                  const Color(0xFF063B39),
+                  const Color(0xFF07191C),
+                ]
+              : [raised, surface],
         ),
-        const Padding(
-          padding: EdgeInsets.all(8),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: highlighted
+              ? mint
+              : const Color(0xFF304145),
+          width: highlighted ? 1.4 : .8,
+        ),
+        boxShadow: highlighted
+            ? [
+                BoxShadow(
+                  color: mint.withAlpha(35),
+                  blurRadius: 17,
+                ),
+              ]
+            : [],
+      );
+
+  Widget pill(
+    String text,
+    bool active,
+    VoidCallback action,
+  ) =>
+      Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: TextButton(
+          onPressed: action,
+          style: TextButton.styleFrom(
+            backgroundColor: active ? mint : raised,
+            foregroundColor: active ? ink : soft,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 17,
+              vertical: 13,
+            ),
+            shape: const StadiumBorder(),
+          ),
           child: Text(
-            'Hold a saved filter to delete it',
-            style: TextStyle(color: muted, fontSize: 10),
+            text,
+            style: TextStyle(
+              fontWeight: active
+                  ? FontWeight.bold
+                  : FontWeight.normal,
+            ),
           ),
         ),
-      ],
-    );
-  }
+      );
 
-  Widget toolsPanel() {
-    switch (tab) {
+  Widget slider(
+    String label,
+    double value,
+    double low,
+    double high,
+    ValueChanged<double> change,
+  ) =>
+      Row(
+        children: [
+          SizedBox(
+            width: 93,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: soft,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              value: cap(value, low, high),
+              min: low,
+              max: high,
+              onChanged: processing
+                  ? null
+                  : (v) => setState(
+                        () => change(v),
+                      ),
+              onChangeEnd: (_) => refresh(),
+            ),
+          ),
+          SizedBox(
+            width: 43,
+            child: Text(
+              value.toStringAsFixed(2),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: mint,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget photoTile(
+    String label,
+    Uint8List? bytes,
+    bool selected,
+    VoidCallback tap, {
+    VoidCallback? onLongPress,
+  }) =>
+      GestureDetector(
+        onTap: tap,
+        onLongPress: onLongPress,
+        child: SizedBox(
+          width: 108,
+          child: Column(
+            children: [
+              Container(
+                width: 98,
+                height: 113,
+                clipBehavior: Clip.antiAlias,
+                decoration: glass(
+                  highlighted: selected,
+                  radius: 13,
+                ),
+                child: bytes != null
+                    ? Image.memory(
+                        bytes,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                      )
+                    : const Icon(
+                        Icons.auto_awesome,
+                        color: mint,
+                      ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: selected ? mint : soft,
+                  height: 1.15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget filterControls() => Column(
+        children: [
+          const SizedBox(height: 10),
+          const Text(
+            'LTJ3 SIGNATURE COLLECTION',
+            style: TextStyle(
+              fontSize: 10,
+              color: soft,
+              letterSpacing: 2.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 151,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                GestureDetector(
+                  onTap: nameAndSave,
+                  child: SizedBox(
+                    width: 108,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 98,
+                          height: 113,
+                          decoration: glass(
+                            highlighted: true,
+                            radius: 13,
+                          ),
+                          child: const Icon(
+                            Icons.add,
+                            color: mint,
+                            size: 37,
+                          ),
+                        ),
+                        const SizedBox(height: 9),
+                        const Text(
+                          'CREATE FILTER',
+                          style: TextStyle(
+                            color: mint,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                for (final name in saved.keys.toList())
+                  photoTile(
+                    name,
+                    customThumb[name],
+                    false,
+                    () {
+                      if (processing) return;
+                      setState(
+                        () => edits = saved[name]!.copy(),
+                      );
+                      refresh();
+                    },
+                    onLongPress: () => showDialog<void>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('Delete $name?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                saved.remove(name);
+                                customThumb.remove(name);
+                              });
+                              storeSaved();
+                              Navigator.pop(ctx);
+                            },
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (thumb.isNotEmpty)
+                  photoTile(
+                    'ORIGINAL',
+                    thumb[0],
+                    edits.filter == -1,
+                    () => selectFilter(-1),
+                  ),
+                for (int i = 0;
+                    i < signatures.length &&
+                        i + 1 < thumb.length;
+                    i++)
+                  photoTile(
+                    signatures[i].name,
+                    thumb[i + 1],
+                    edits.filter == i,
+                    () => selectFilter(i),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          slider(
+            'Intensity',
+            edits.intensity,
+            0,
+            1.5,
+            (v) => edits.intensity = v,
+          ),
+        ],
+      );
+
+  Widget textureControls() => Column(
+        children: [
+          const SizedBox(height: 10),
+          const Text(
+            'LTJ3 TEXTURE LAB',
+            style: TextStyle(
+              fontSize: 10,
+              color: soft,
+              letterSpacing: 2.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 151,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (var i = 0;
+                    i < textureLabels.length &&
+                        i < textureThumb.length;
+                    i++)
+                  photoTile(
+                    textureLabels[i],
+                    textureThumb[i],
+                    edits.texture == i,
+                    () => selectTexture(i),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          slider(
+            'Strength',
+            edits.textureAmount,
+            0,
+            1,
+            (v) => edits.textureAmount = v,
+          ),
+        ],
+      );
+
+  Widget tools() {
+    switch (section) {
       case 'Filters':
-        return filtersPanel();
+        return filterControls();
+
+      case 'Texture':
+        return textureControls();
 
       case 'Light':
         return Column(
           children: [
-            slider('Exposure', edit.exposure, -.75, .75,
-                (v) => edit.exposure = v),
-            slider('Contrast', edit.contrast, -.5, .5,
-                (v) => edit.contrast = v),
-            slider('Highlights', edit.highlights, -1, 1,
-                (v) => edit.highlights = v),
-            slider('Shadows', edit.shadows, -1, 1,
-                (v) => edit.shadows = v),
+            slider(
+              'Exposure',
+              edits.exposure,
+              -.85,
+              .85,
+              (v) => edits.exposure = v,
+            ),
+            slider(
+              'Contrast',
+              edits.contrast,
+              -.5,
+              .6,
+              (v) => edits.contrast = v,
+            ),
+            slider(
+              'Highlights',
+              edits.highlights,
+              -1,
+              1,
+              (v) => edits.highlights = v,
+            ),
+            slider(
+              'Shadows',
+              edits.shadows,
+              -1,
+              1,
+              (v) => edits.shadows = v,
+            ),
+            slider(
+              'Fade',
+              edits.fade,
+              0,
+              .6,
+              (v) => edits.fade = v,
+            ),
           ],
         );
 
       case 'Color':
         return Column(
           children: [
-            slider('Saturation', edit.saturation, -1, 1,
-                (v) => edit.saturation = v),
-            slider('Temperature', edit.temperature, -.3, .3,
-                (v) => edit.temperature = v),
+            slider(
+              'Saturation',
+              edits.saturation,
+              -1,
+              1,
+              (v) => edits.saturation = v,
+            ),
+            slider(
+              'Vibrance',
+              edits.vibrance,
+              -1,
+              1,
+              (v) => edits.vibrance = v,
+            ),
+            slider(
+              'Warmth',
+              edits.warmth,
+              -.6,
+              .6,
+              (v) => edits.warmth = v,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                ActionChip(
+                  label: const Text('WARM'),
+                  onPressed: processing
+                      ? null
+                      : () {
+                          setState(
+                            () => edits.warmth = .24,
+                          );
+                          refresh();
+                        },
+                ),
+                ActionChip(
+                  label: const Text('COOL'),
+                  onPressed: processing
+                      ? null
+                      : () {
+                          setState(
+                            () => edits.warmth = -.23,
+                          );
+                          refresh();
+                        },
+                ),
+                ActionChip(
+                  label: const Text('NATURAL'),
+                  onPressed: processing
+                      ? null
+                      : () {
+                          setState(
+                            () => edits.warmth = 0,
+                          );
+                          refresh();
+                        },
+                ),
+              ],
+            ),
           ],
         );
 
       case 'Details':
         return Column(
           children: [
-            slider('Sharpen', edit.sharpen, 0, 1,
-                (v) => edit.sharpen = v),
-            slider('Vignette', edit.vignette, -1, 1,
-                (v) => edit.vignette = v),
-          ],
-        );
-
-      case 'Texture':
-        return Column(
-          children: [
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 57,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (int i = 0;
-                      i < textureNames.length;
-                      i++)
-                    chip(
-                      textureNames[i],
-                      edit.texture == i,
-                      () {
-                        if (busy) return;
-                        setState(() => edit.texture = i);
-                        refresh();
-                      },
-                    ),
-                ],
-              ),
-            ),
             slider(
-              'Strength',
-              edit.texturePower,
+              'Clarity',
+              edits.clarity,
               0,
               1,
-              (v) => edit.texturePower = v,
+              (v) => edits.clarity = v,
+            ),
+            slider(
+              'Sharpen',
+              edits.sharpen,
+              0,
+              1,
+              (v) => edits.sharpen = v,
+            ),
+            slider(
+              'Film grain',
+              edits.grain,
+              0,
+              1,
+              (v) => edits.grain = v,
+            ),
+            slider(
+              'Vignette',
+              edits.vignette,
+              -1,
+              1,
+              (v) => edits.vignette = v,
             ),
           ],
         );
@@ -1061,251 +1208,279 @@ class _StudioState extends State<Studio> {
     }
   }
 
-  Widget welcome() {
-    return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 28,
+  Widget welcome() => Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 27,
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 36),
+                const Text(
+                  'LTJ3 / CREATIVE UNIVERSE',
+                  style: TextStyle(
+                    color: soft,
+                    letterSpacing: 3,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  width: 110,
+                  height: 110,
+                  decoration: glass(
+                    highlighted: true,
+                    radius: 40,
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome,
+                    color: mint,
+                    size: 51,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                const Text(
+                  'LTJ3',
+                  style: TextStyle(
+                    fontFamily: 'Georgia',
+                    fontSize: 78,
+                    fontStyle: FontStyle.italic,
+                    letterSpacing: 5,
+                  ),
+                ),
+                const Text(
+                  'N E B U L A   E D I T I O N',
+                  style: TextStyle(
+                    color: mint,
+                    fontSize: 11,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'CREATE BEYOND ORDINARY.',
+                  style: TextStyle(
+                    color: soft,
+                    letterSpacing: 2,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: FilledButton(
+                    onPressed: () =>
+                        setState(() => started = true),
+                    child: const Text(
+                      'ENTER THE STUDIO  →',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget dashboardCard(
+    IconData icon,
+    String title,
+    String subtitle,
+    VoidCallback tap, {
+    bool highlighted = false,
+  }) =>
+      InkWell(
+        onTap: tap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(17),
+          decoration: glass(
+            highlighted: highlighted,
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 45),
-              const Text(
-                'LTJ3 / CREATIVE STUDIO',
-                style: TextStyle(
-                  letterSpacing: 4,
-                  color: silver,
-                  fontSize: 11,
+              Icon(
+                icon,
+                size: 29,
+                color: mint,
+              ),
+              const SizedBox(height: 22),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
                 ),
               ),
-              const Spacer(),
-              const Icon(
-                Icons.auto_awesome,
-                color: accent,
-                size: 32,
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'LTJ3',
-                style: TextStyle(
-                  fontFamily: 'Georgia',
-                  fontStyle: FontStyle.italic,
-                  fontSize: 76,
-                  fontWeight: FontWeight.w300,
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: dim,
                 ),
               ),
-              const Text(
-                'E D I T O R',
-                style: TextStyle(
-                  letterSpacing: 5,
-                  color: silver,
+            ],
+          ),
+        ),
+      );
+
+  Widget gallery() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text(
+            'YOUR CREATIVE WORKSPACE',
+            style: TextStyle(
+              color: dim,
+              fontSize: 10,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Your Studio.',
+            style: TextStyle(
+              fontSize: 34,
+              fontFamily: 'Georgia',
+            ),
+          ),
+          const SizedBox(height: 19),
+          Container(
+            height: 180,
+            alignment: Alignment.center,
+            decoration: glass(
+              highlighted: true,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.auto_awesome,
+                  color: mint,
+                  size: 50,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'CREATE YOUR SIGNATURE LOOK',
+                  style: TextStyle(
+                    fontSize: 12,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${signatures.length} signature filters · ${textureLabels.length} textures',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: dim,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 17),
+          Row(
+            children: [
+              Expanded(
+                child: dashboardCard(
+                  Icons.add_photo_alternate_outlined,
+                  'Import Photos',
+                  'START A NEW EDIT',
+                  importImages,
+                  highlighted: true,
                 ),
               ),
-              const SizedBox(height: 25),
-              Container(
-                width: 70,
-                height: 1,
-                color: accent,
-              ),
-              const SizedBox(height: 30),
-              const Text(
-                'CREATE YOUR OWN VISION.',
-                style: TextStyle(
-                  letterSpacing: 3,
-                  color: silver,
-                  fontSize: 12,
+              const SizedBox(width: 12),
+              Expanded(
+                child: dashboardCard(
+                  Icons.layers_outlined,
+                  'Explore Presets',
+                  'CREATE YOUR OWN LOOK',
+                  importImages,
                 ),
               ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 58,
-                child: FilledButton(
-                  onPressed: () {
-                    setState(() => started = true);
-                  },
-                  child: const Text(
-                    'Get Started  →',
-                    style: TextStyle(fontSize: 18),
+            ],
+          ),
+          const SizedBox(height: 26),
+          const Text(
+            'Recent Projects',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 13),
+          if (photos.isEmpty)
+            Container(
+              height: 100,
+              decoration: glass(),
+              alignment: Alignment.center,
+              child: const Text(
+                'Your next masterpiece starts here.',
+                style: TextStyle(
+                  color: dim,
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics:
+                  const NeverScrollableScrollPhysics(),
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+              ),
+              itemCount: photos.length,
+              itemBuilder: (ctx, i) => GestureDetector(
+                onTap: () => openImage(photos[i]),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: Image.memory(
+                    photos[i],
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),
-              const SizedBox(height: 35),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget gallery() {
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        const Text(
-          'YOUR CREATIVE WORKSPACE',
-          style: TextStyle(
-            color: muted,
-            fontSize: 10,
-            letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Your Studio.',
-          style: TextStyle(
-            fontFamily: 'Georgia',
-            fontSize: 32,
-          ),
-        ),
-        const SizedBox(height: 25),
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: panel,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            children: [
-              const Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('NEW PROJECT'),
-                  Icon(Icons.add, color: accent),
-                ],
-              ),
-              const SizedBox(height: 30),
-              const Icon(
-                Icons.add_photo_alternate_outlined,
-                color: silver,
-                size: 55,
-              ),
-              const SizedBox(height: 13),
-              const Text(
-                'Create Something Beautiful',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Your next masterpiece starts here.',
-                style: TextStyle(
-                  color: muted,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 25),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: importPhotos,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Import Photos'),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 25),
-        const Text(
-          'Recent Projects',
-          style: TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 14),
-        if (photos.isEmpty)
+            ),
+          const SizedBox(height: 24),
           Container(
-            height: 125,
-            decoration: BoxDecoration(
-              color: panel,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Center(
-              child: Text(
-                'No projects yet',
-                style: TextStyle(color: muted),
-              ),
-            ),
-          )
-        else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 5,
-              crossAxisSpacing: 5,
-            ),
-            itemCount: photos.length,
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () => openPhoto(photos[index]),
-                child: Image.memory(
-                  photos[index],
-                  fit: BoxFit.cover,
+            padding: const EdgeInsets.all(16),
+            decoration: glass(),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.bookmark_border,
+                  color: mint,
                 ),
-              );
-            },
-          ),
-        const SizedBox(height: 25),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: panel,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.auto_awesome, color: accent),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'LTJ3 Signature Collection',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Custom looks are saved on this device',
+                    style: TextStyle(
+                      color: soft,
+                      fontSize: 12,
                     ),
-                    Text(
-                      '20 filters + your custom looks',
-                      style: TextStyle(
-                        color: muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              Icon(Icons.chevron_right),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
 
-  Widget editor() {
-    return Column(
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onLongPressStart: (_) {
-              setState(() => comparing = true);
-            },
-            onLongPressEnd: (_) {
-              setState(() => comparing = false);
-            },
+  Widget editor() => Column(
+        children: [
+          Expanded(
             child: Container(
               color: Colors.black,
               width: double.infinity,
@@ -1313,102 +1488,160 @@ class _StudioState extends State<Studio> {
                 alignment: Alignment.center,
                 children: [
                   if ((comparing ? before : after) != null)
-                    InteractiveViewer(
-                      minScale: .5,
-                      maxScale: 5,
-                      child: Image.memory(
-                        (comparing ? before : after)!,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
+                    GestureDetector(
+                      onLongPressStart: (_) =>
+                          setState(
+                        () => comparing = true,
+                      ),
+                      onLongPressEnd: (_) =>
+                          setState(
+                        () => comparing = false,
+                      ),
+                      child: InteractiveViewer(
+                        minScale: .8,
+                        maxScale: 5,
+                        child: Image.memory(
+                          (comparing ? before : after)!,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                          gaplessPlayback: true,
+                        ),
                       ),
                     ),
-                  if (busy)
+                  if (processing)
                     const Positioned(
                       top: 15,
                       right: 15,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
                       ),
                     ),
                   if (comparing)
                     const Positioned(
-                      bottom: 15,
-                      child: Text('ORIGINAL'),
+                      bottom: 10,
+                      child: Text(
+                        'ORIGINAL',
+                        style: TextStyle(
+                          color: mint,
+                          letterSpacing: 2,
+                        ),
+                      ),
                     ),
                 ],
               ),
             ),
           ),
-        ),
-        Container(
-          color: panel,
-          child: Column(
-            children: [
-              SizedBox(
-                height: 57,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.all(5),
-                  children: [
-                    for (final name in [
-                      'Filters',
-                      'Light',
-                      'Color',
-                      'Details',
-                      'Texture',
-                    ])
-                      chip(
-                        name,
-                        tab == name,
-                        () => setState(() => tab = name),
-                      ),
-                  ],
+          Container(
+            decoration: const BoxDecoration(
+              color: surface,
+              border: Border(
+                top: BorderSide(
+                  color: Color(0xFF213438),
                 ),
               ),
-              SizedBox(
-                height: 215,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(8),
-                  child: toolsPanel(),
-                ),
-              ),
-              const Divider(height: 1, color: cardColor),
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () {
-                            setState(() {
-                              edit = EditorValues();
-                            });
-                            refresh();
-                          },
-                    icon: const Icon(Icons.restart_alt),
-                    label: const Text('Reset'),
+            ),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 61,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding:
+                        const EdgeInsets.fromLTRB(
+                      10,
+                      7,
+                      10,
+                      7,
+                    ),
+                    children: [
+                      for (final name in [
+                        'Filters',
+                        'Light',
+                        'Color',
+                        'Details',
+                        'Texture',
+                      ])
+                        pill(
+                          name,
+                          section == name,
+                          () => setState(
+                            () => section = name,
+                          ),
+                        ),
+                    ],
                   ),
-                  const Text(
-                    'HOLD TO COMPARE',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 9,
+                ),
+                SizedBox(
+                  height: 232,
+                  child: SingleChildScrollView(
+                    padding:
+                        const EdgeInsets.fromLTRB(
+                      10,
+                      5,
+                      10,
+                      7,
+                    ),
+                    child: tools(),
+                  ),
+                ),
+                const Divider(
+                  height: 1,
+                  color: Color(0xFF25373B),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 5,
+                    ),
+                    child: Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton.icon(
+                          onPressed: processing
+                              ? null
+                              : () {
+                                  setState(
+                                    () => edits = Edits(),
+                                  );
+                                  refresh();
+                                },
+                          icon: const Icon(
+                            Icons.restart_alt,
+                          ),
+                          label: const Text('Reset'),
+                        ),
+                        const Text(
+                          'HOLD TO COMPARE',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: dim,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: processing
+                              ? null
+                              : exportOptions,
+                          icon: const Icon(
+                            Icons.ios_share,
+                          ),
+                          label: const Text('Export'),
+                        ),
+                      ],
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: busy ? null : exportMenu,
-                    icon: const Icon(Icons.ios_share),
-                    label: const Text('Export'),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1418,31 +1651,37 @@ class _StudioState extends State<Studio> {
       appBar: AppBar(
         centerTitle: true,
         title: const Text(
-          'LTJ3 EDITOR',
+          'L T J 3   E D I T O R',
           style: TextStyle(
-            letterSpacing: 3,
-            fontSize: 17,
+            fontSize: 14,
+            letterSpacing: 1,
           ),
         ),
         leading: IconButton(
-          onPressed: () {
-            setState(() => editing = false);
-          },
-          icon: Icon(
-            editing
-                ? Icons.arrow_back_ios_new
-                : Icons.grid_view_rounded,
+          onPressed: () => setState(() {
+            if (editorOpen) {
+              editorOpen = false;
+            } else {
+              started = false;
+            }
+          }),
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
           ),
         ),
         actions: [
-          if (editing)
+          if (editorOpen)
             IconButton(
-              onPressed: busy ? null : exportMenu,
-              icon: const Icon(Icons.ios_share),
+              onPressed: processing
+                  ? null
+                  : exportOptions,
+              icon: const Icon(
+                Icons.ios_share,
+              ),
             ),
         ],
       ),
-      body: editing ? editor() : gallery(),
+      body: editorOpen ? editor() : gallery(),
     );
   }
 }
