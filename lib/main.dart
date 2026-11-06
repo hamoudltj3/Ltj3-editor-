@@ -1,233 +1,297 @@
 
-import 'dart:typed_data';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
+import 'package:image/image.dart' as im;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
-void main() => runApp(const Ltj3EditorApp());
+void main() => runApp(const Ltj3App());
 
-class Ltj3EditorApp extends StatelessWidget {
-  const Ltj3EditorApp({super.key});
-
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'LTJ3 EDITOR',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark(useMaterial3: true).copyWith(
-          scaffoldBackgroundColor: const Color(0xff0d0d12),
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xffcbb6ff),
-            brightness: Brightness.dark,
-          ),
-        ),
-        home: const EditorScreen(),
-      );
-}
-
-class Preset {
+class Look {
   final String name;
-  final double brightness;
-  final double contrast;
-  final double saturation;
-  final double gamma;
-  final double hue;
+  final double light, contrast, saturation, warm, fade;
 
-  const Preset(
+  const Look(
     this.name,
-    this.brightness,
+    this.light,
     this.contrast,
     this.saturation,
-    this.gamma,
-    this.hue,
+    this.warm,
+    this.fade,
   );
 }
 
-const presets = <Preset>[
-  Preset('أصلي', 1, 1, 1, 1, 0),
-  Preset('حرير', 1.08, .91, .88, .93, 0),
-  Preset('غروب', 1.03, 1.10, 1.17, 1, -9),
-  Preset('سينما', .92, 1.22, .79, 1.04, -4),
-  Preset('ثلج', 1.08, 1.05, .89, 1, 12),
-  Preset('ذهبي', 1.07, 1.12, 1.12, .97, -13),
-  Preset('حالم', 1.13, .82, .92, .89, 6),
-  Preset('ليلي', .76, 1.25, .83, 1.10, 9),
-  Preset('نابض', 1.03, 1.16, 1.43, .98, 0),
-  Preset('قديم', 1.02, .87, .61, 1.06, -15),
-  Preset('أبيض وأسود', 1, 1.18, 0, 1, 0),
+const looks = <Look>[
+  Look('أصلي', 0, 0, 0, 0, 0),
+  Look('حرير', .035, -.07, -.07, .025, .045),
+  Look('سينما', -.02, .10, -.12, -.015, .035),
+  Look('ذهبي', .02, .03, .06, .085, .015),
+  Look('ثلج', .025, .025, -.10, -.08, .01),
+  Look('ليلي', -.055, .07, -.14, -.03, .03),
+  Look('قديم', .015, -.06, -.24, .045, .09),
+  Look('حالم', .05, -.09, -.06, .03, .07),
+  Look('نقي', .025, .05, .025, -.01, 0),
+  Look('مات', -.015, -.03, -.07, 0, .12),
+  Look('أبيض وأسود', .01, .055, -1, 0, .025),
 ];
 
-class EditorScreen extends StatefulWidget {
-  const EditorScreen({super.key});
+class Ltj3App extends StatelessWidget {
+  const Ltj3App({super.key});
 
   @override
-  State<EditorScreen> createState() => _EditorScreenState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'LTJ3 EDITOR',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(useMaterial3: true).copyWith(
+        scaffoldBackgroundColor: const Color(0xff090909),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.white,
+          brightness: Brightness.dark,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xff101010),
+          foregroundColor: Colors.white,
+        ),
+        sliderTheme: const SliderThemeData(
+          activeTrackColor: Colors.white,
+          thumbColor: Colors.white,
+          inactiveTrackColor: Color(0xff444444),
+        ),
+      ),
+      home: const EditorPage(),
+    );
+  }
 }
 
-class _EditorScreenState extends State<EditorScreen> {
-  Uint8List? original;
+class EditorPage extends StatefulWidget {
+  const EditorPage({super.key});
+
+  @override
+  State<EditorPage> createState() => _EditorPageState();
+}
+
+class _EditorPageState extends State<EditorPage> {
+  Uint8List? source;
   Uint8List? preview;
 
-  int presetIndex = 0;
-  int quarterTurns = 0;
+  int look = 0;
+  int turns = 0;
+  int revision = 0;
 
   double strength = 1;
-  double brightness = 1;
-  double contrast = 1;
-  double saturation = 1;
-  double gamma = 1;
-  double hue = 0;
-  double exposure = 0;
-  double backgroundTolerance = 45;
+  double light = 0;
+  double contrast = 0;
+  double saturation = 0;
+  double temperature = 0;
+  double shadows = 0;
+  double highlights = 0;
 
-  bool removeFlatBackground = false;
   bool busy = false;
+  String tab = 'filters';
 
-  String tool = 'filters';
+  double bounded(double x, double lo, double hi) {
+    return x.clamp(lo, hi).toDouble();
+  }
 
-  void toast(String msg) {
+  void notice(String message) {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
+      SnackBar(content: Text(message)),
     );
   }
 
-  Future<void> choose() async {
+  Future<void> openPhoto() async {
     if (busy) return;
 
     try {
-      final x = await ImagePicker().pickImage(
+      final f = await ImagePicker().pickImage(
         source: ImageSource.gallery,
       );
 
-      if (x == null) return;
+      if (f == null) return;
 
-      final bytes = await x.readAsBytes();
+      final bytes = await f.readAsBytes();
+
       if (!mounted) return;
 
       setState(() {
-        original = bytes;
+        source = bytes;
         preview = bytes;
-        _resetValues();
+        _resetSettings();
       });
 
-      await refresh();
+      await updatePreview();
     } catch (_) {
-      toast('تعذر فتح الصورة. جربي JPG أو PNG');
+      notice('ما قدرنا نفتح الصورة. جرّبي JPG أو PNG.');
     }
   }
 
-  void _resetValues() {
-    presetIndex = 0;
+  void _resetSettings() {
+    look = 0;
+    turns = 0;
     strength = 1;
-    brightness = 1;
-    contrast = 1;
-    saturation = 1;
-    gamma = 1;
-    hue = 0;
-    exposure = 0;
-    backgroundTolerance = 45;
-    removeFlatBackground = false;
-    quarterTurns = 0;
+    light = 0;
+    contrast = 0;
+    saturation = 0;
+    temperature = 0;
+    shadows = 0;
+    highlights = 0;
   }
 
   Future<void> reset() async {
-    if (original == null || busy) return;
+    if (source == null || busy) return;
 
-    setState(_resetValues);
-    await refresh();
+    setState(_resetSettings);
+    await updatePreview();
   }
 
-  img.Image render(
-    Uint8List bytes, {
+  im.Image render(
+    Uint8List input, {
     required bool small,
   }) {
-    var picture = img.decodeImage(bytes);
+    var image = im.decodeImage(input);
 
-    if (picture == null) {
-      throw StateError('Unsupported format');
+    if (image == null) {
+      throw StateError('Unsupported image');
     }
 
-    picture = img.bakeOrientation(picture);
+    image = im.bakeOrientation(image);
 
-    if (small && picture.width > 950) {
-      picture = img.copyResize(
-        picture,
-        width: 950,
-      );
+    if (small && image.width > 900) {
+      image = im.copyResize(image, width: 900);
     }
 
-    final selected = presets[presetIndex];
-    final f = strength;
+    final p = looks[look];
 
-    picture = img.adjustColor(
-      picture,
-      brightness: brightness *
-          (1 + (selected.brightness - 1) * f),
-      contrast: contrast *
-          (1 + (selected.contrast - 1) * f),
-      saturation: saturation *
-          (1 + (selected.saturation - 1) * f),
-      gamma: gamma *
-          (1 + (selected.gamma - 1) * f),
-      hue: hue + selected.hue * f,
-      exposure: exposure,
+    final b = bounded(
+      light + p.light * strength,
+      -.30,
+      .30,
     );
 
-    if (quarterTurns != 0) {
-      picture = img.copyRotate(
-        picture,
-        angle: quarterTurns * 90,
+    final c = bounded(
+      1 + contrast + p.contrast * strength,
+      .60,
+      1.40,
+    );
+
+    final s = bounded(
+      1 + saturation + p.saturation * strength,
+      0,
+      1.65,
+    );
+
+    final w = bounded(
+      temperature + p.warm * strength,
+      -.18,
+      .18,
+    );
+
+    final fade = bounded(
+      p.fade * strength,
+      0,
+      .18,
+    );
+
+    for (final px in image) {
+      double r = px.r.toDouble() / 255;
+      double g = px.g.toDouble() / 255;
+      double bl = px.b.toDouble() / 255;
+
+      r = bounded(r + b, 0, 1);
+      g = bounded(g + b, 0, 1);
+      bl = bounded(bl + b, 0, 1);
+
+      final lum = .2126 * r + .7152 * g + .0722 * bl;
+
+      final shadowMask =
+          math.pow(1 - lum, 2).toDouble();
+
+      final hiMask =
+          math.pow(lum, 2).toDouble();
+
+      final local =
+          shadows * shadowMask * .25 -
+          highlights * hiMask * .25;
+
+      r += local + w * .28;
+      g += local;
+      bl += local - w * .28;
+
+      r = (r - .5) * c + .5;
+      g = (g - .5) * c + .5;
+      bl = (bl - .5) * c + .5;
+
+      final gray =
+          .2126 * r + .7152 * g + .0722 * bl;
+
+      r = gray + (r - gray) * s;
+      g = gray + (g - gray) * s;
+      bl = gray + (bl - gray) * s;
+
+      px.r = (
+        bounded(
+          r * (1 - fade) + fade * .09,
+          0,
+          1,
+        ) * 255
+      ).round();
+
+      px.g = (
+        bounded(
+          g * (1 - fade) + fade * .09,
+          0,
+          1,
+        ) * 255
+      ).round();
+
+      px.b = (
+        bounded(
+          bl * (1 - fade) + fade * .09,
+          0,
+          1,
+        ) * 255
+      ).round();
+    }
+
+    if (turns != 0) {
+      image = im.copyRotate(
+        image,
+        angle: turns * 90,
       );
     }
 
-    if (removeFlatBackground) {
-      picture = picture.convert(numChannels: 4);
-
-      final corner = picture.getPixel(0, 0);
-      final r0 = corner.r.toDouble();
-      final g0 = corner.g.toDouble();
-      final b0 = corner.b.toDouble();
-
-      for (final p in picture) {
-        final distance = math.sqrt(
-          math.pow(p.r - r0, 2) +
-              math.pow(p.g - g0, 2) +
-              math.pow(p.b - b0, 2),
-        );
-
-        if (distance < backgroundTolerance) {
-          p.a = 0;
-        }
-      }
-    }
-
-    return picture;
+    return image;
   }
 
-  Future<void> refresh() async {
-    if (original == null || busy) return;
+  Future<void> updatePreview() async {
+    if (source == null) return;
+
+    final id = ++revision;
+
+    if (busy) return;
 
     setState(() => busy = true);
 
     try {
       final edited = render(
-        original!,
+        source!,
         small: true,
       );
 
       final bytes = Uint8List.fromList(
-        img.encodePng(edited),
+        im.encodeJpg(edited, quality: 88),
       );
 
-      if (mounted) {
+      if (mounted && id == revision) {
         setState(() => preview = bytes);
       }
     } catch (_) {
-      toast('صار خطأ أثناء تعديل الصورة');
+      notice('صار خطأ بمعالجة الصورة');
     } finally {
       if (mounted) {
         setState(() => busy = false);
@@ -235,42 +299,33 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  Future<void> export() async {
-    if (original == null || busy) return;
+  Future<void> save() async {
+    if (source == null || busy) return;
 
     setState(() => busy = true);
 
     try {
       final edited = render(
-        original!,
+        source!,
         small: false,
       );
 
-      final png = removeFlatBackground;
-
-      final data = Uint8List.fromList(
-        png
-            ? img.encodePng(edited)
-            : img.encodeJpg(edited, quality: 95),
+      final bytes = Uint8List.fromList(
+        im.encodeJpg(edited, quality: 95),
       );
 
       await Share.shareXFiles(
         [
           XFile.fromData(
-            data,
-            mimeType: png
-                ? 'image/png'
-                : 'image/jpeg',
+            bytes,
+            mimeType: 'image/jpeg',
+            name: 'LTJ3_EDIT.jpg',
           ),
         ],
-        fileNameOverrides: [
-          png
-              ? 'ltj3_edit.png'
-              : 'ltj3_edit.jpg',
-        ],
+        fileNameOverrides: ['LTJ3_EDIT.jpg'],
       );
     } catch (_) {
-      toast('تعذر تصدير الصورة');
+      notice('الحفظ ما نجح. جربي من Safari.');
     } finally {
       if (mounted) {
         setState(() => busy = false);
@@ -278,79 +333,82 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  Widget setting(
-    String title,
+  Widget control(
+    String name,
     double value,
     double min,
     double max,
-    ValueChanged<double> change,
+    ValueChanged<double> apply,
   ) {
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: 20,
+            horizontal: 18,
           ),
           child: Row(
             mainAxisAlignment:
                 MainAxisAlignment.spaceBetween,
             children: [
-              Text(title),
+              Text(
+                name,
+                style: const TextStyle(fontSize: 13),
+              ),
               Text(
                 value.toStringAsFixed(2),
                 style: const TextStyle(
-                  color: Color(0xffcbb6ff),
+                  color: Colors.white70,
+                  fontSize: 12,
                 ),
               ),
             ],
           ),
         ),
         Slider(
-          value: value.clamp(min, max).toDouble(),
+          value: bounded(value, min, max),
           min: min,
           max: max,
           onChanged: busy
               ? null
-              : (v) => setState(() => change(v)),
-          onChangeEnd: (_) => refresh(),
+              : (v) => setState(() => apply(v)),
+          onChangeEnd: (_) => updatePreview(),
         ),
       ],
     );
   }
 
-  Widget filtersPanel() {
+  Widget presetPanel() {
     return Column(
       children: [
-        const Text(
-          'فلاتر LTJ3 الخاصة',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 12),
         SizedBox(
-          height: 56,
+          height: 68,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
-              horizontal: 12,
+              horizontal: 14,
             ),
-            itemCount: presets.length,
+            itemCount: looks.length,
             separatorBuilder: (_, __) =>
                 const SizedBox(width: 8),
             itemBuilder: (_, i) => ChoiceChip(
-              label: Text(presets[i].name),
-              selected: i == presetIndex,
+              label: Text(looks[i].name),
+              selected: look == i,
+              selectedColor: Colors.white,
+              labelStyle: TextStyle(
+                color: look == i
+                    ? Colors.black
+                    : Colors.white,
+              ),
               onSelected: busy
                   ? null
                   : (_) async {
-                      setState(() => presetIndex = i);
-                      await refresh();
+                      setState(() => look = i);
+                      await updatePreview();
                     },
             ),
           ),
         ),
-        setting(
+        control(
           'قوة الفلتر',
           strength,
           0,
@@ -364,33 +422,33 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget lightPanel() {
     return Column(
       children: [
-        setting(
+        control(
           'الإضاءة',
-          brightness,
-          .3,
-          2,
-          (v) => brightness = v,
+          light,
+          -.25,
+          .25,
+          (v) => light = v,
         ),
-        setting(
+        control(
           'التباين',
           contrast,
-          0,
-          2,
+          -.35,
+          .35,
           (v) => contrast = v,
         ),
-        setting(
-          'التعريض',
-          exposure,
-          -1.5,
-          1.5,
-          (v) => exposure = v,
+        control(
+          'الظلال',
+          shadows,
+          -1,
+          1,
+          (v) => shadows = v,
         ),
-        setting(
-          'جاما',
-          gamma,
-          .5,
-          1.8,
-          (v) => gamma = v,
+        control(
+          'الإضاءات العالية',
+          highlights,
+          -1,
+          1,
+          (v) => highlights = v,
         ),
       ],
     );
@@ -399,19 +457,19 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget colorPanel() {
     return Column(
       children: [
-        setting(
-          'تشبع الألوان',
+        control(
+          'التشبع',
           saturation,
-          0,
-          2,
+          -1,
+          .55,
           (v) => saturation = v,
         ),
-        setting(
-          'درجة اللون',
-          hue,
-          -45,
-          45,
-          (v) => hue = v,
+        control(
+          'الحرارة',
+          temperature,
+          -.15,
+          .15,
+          (v) => temperature = v,
         ),
       ],
     );
@@ -420,6 +478,15 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget toolsPanel() {
     return Column(
       children: [
+        const Padding(
+          padding: EdgeInsets.all(10),
+          child: Text(
+            'تدوير الصورة',
+            style: TextStyle(
+              color: Colors.white70,
+            ),
+          ),
+        ),
         Row(
           mainAxisAlignment:
               MainAxisAlignment.center,
@@ -429,26 +496,24 @@ class _EditorScreenState extends State<EditorScreen> {
                   ? null
                   : () async {
                       setState(() {
-                        quarterTurns =
-                            (quarterTurns + 3) % 4;
+                        turns = (turns + 3) % 4;
                       });
-                      await refresh();
+                      await updatePreview();
                     },
               icon: const Icon(
                 Icons.rotate_left,
               ),
               label: const Text('يسار'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 15),
             OutlinedButton.icon(
               onPressed: busy
                   ? null
                   : () async {
                       setState(() {
-                        quarterTurns =
-                            (quarterTurns + 1) % 4;
+                        turns = (turns + 1) % 4;
                       });
-                      await refresh();
+                      await updatePreview();
                     },
               icon: const Icon(
                 Icons.rotate_right,
@@ -457,85 +522,34 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         ),
-        SwitchListTile(
-          title: const Text(
-            'محو خلفية بلون مشابه',
+        const Padding(
+          padding: EdgeInsets.all(12),
+          child: Text(
+            'محو الخلفية الذكي رح نضيفه بمرحلة مستقلة؛ المحو القديم كان يشوّه الألوان.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+            ),
           ),
-          subtitle: const Text(
-            'تجريبي للخلفيات السادة فقط، مش AI',
-          ),
-          value: removeFlatBackground,
-          onChanged: busy
-              ? null
-              : (v) async {
-                  setState(() {
-                    removeFlatBackground = v;
-                  });
-                  await refresh();
-                },
         ),
-        if (removeFlatBackground)
-          setting(
-            'حساسية المحو',
-            backgroundTolerance,
-            5,
-            140,
-            (v) => backgroundTolerance = v,
-          ),
       ],
     );
   }
 
-  Widget toolbar() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          editorTab(
-            'filters',
-            'الفلاتر',
-            Icons.auto_awesome,
-          ),
-          editorTab(
-            'light',
-            'الإضاءة',
-            Icons.wb_sunny_outlined,
-          ),
-          editorTab(
-            'color',
-            'الألوان',
-            Icons.palette_outlined,
-          ),
-          editorTab(
-            'tools',
-            'الأدوات',
-            Icons.tune,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget editorTab(
+  Widget tabButton(
     String id,
     String title,
     IconData icon,
   ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 3,
-      ),
-      child: TextButton.icon(
-        onPressed: () {
-          setState(() => tool = id);
-        },
-        icon: Icon(icon),
-        label: Text(title),
-        style: TextButton.styleFrom(
-          foregroundColor: tool == id
-              ? const Color(0xffd4c0ff)
-              : Colors.white70,
-        ),
+    return TextButton.icon(
+      onPressed: () => setState(() => tab = id),
+      icon: Icon(icon, size: 18),
+      label: Text(title),
+      style: TextButton.styleFrom(
+        foregroundColor: tab == id
+            ? Colors.white
+            : Colors.white54,
       ),
     );
   }
@@ -547,26 +561,28 @@ class _EditorScreenState extends State<EditorScreen> {
         title: const Text(
           'LTJ3 EDITOR',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.4,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.6,
           ),
         ),
         actions: [
           IconButton(
             tooltip: 'إعادة ضبط',
-            onPressed:
-                original == null || busy ? null : reset,
             icon: const Icon(
               Icons.restart_alt,
             ),
+            onPressed: source == null || busy
+                ? null
+                : reset,
           ),
           IconButton(
-            tooltip: 'تصدير',
-            onPressed:
-                original == null || busy ? null : export,
+            tooltip: 'حفظ',
             icon: const Icon(
               Icons.ios_share,
             ),
+            onPressed: source == null || busy
+                ? null
+                : save,
           ),
         ],
       ),
@@ -575,11 +591,11 @@ class _EditorScreenState extends State<EditorScreen> {
           Expanded(
             child: Container(
               width: double.infinity,
-              color: const Color(0xff08080b),
+              color: const Color(0xff050505),
               child: preview == null
                   ? Center(
                       child: FilledButton.icon(
-                        onPressed: choose,
+                        onPressed: openPhoto,
                         icon: const Icon(
                           Icons.add_photo_alternate_outlined,
                         ),
@@ -596,8 +612,8 @@ class _EditorScreenState extends State<EditorScreen> {
                           maxScale: 5,
                           child: Image.memory(
                             preview!,
-                            fit: BoxFit.contain,
                             gaplessPlayback: true,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         if (busy)
@@ -611,35 +627,62 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           Container(
             decoration: const BoxDecoration(
-              color: Color(0xff1b1a23),
-              borderRadius:
-                  BorderRadius.vertical(
-                top: Radius.circular(24),
+              color: Color(0xff171717),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(20),
               ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                toolbar(),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      tabButton(
+                        'filters',
+                        'الفلاتر',
+                        Icons.auto_awesome,
+                      ),
+                      tabButton(
+                        'light',
+                        'الإضاءة',
+                        Icons.wb_sunny_outlined,
+                      ),
+                      tabButton(
+                        'color',
+                        'الألوان',
+                        Icons.palette_outlined,
+                      ),
+                      tabButton(
+                        'tools',
+                        'الأدوات',
+                        Icons.tune,
+                      ),
+                    ],
+                  ),
+                ),
                 SizedBox(
-                  height: 205,
+                  height: 210,
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.only(
-                        top: 10,
+                        top: 12,
                       ),
-                      child: tool == 'filters'
-                          ? filtersPanel()
-                          : tool == 'light'
+                      child: tab == 'filters'
+                          ? presetPanel()
+                          : tab == 'light'
                               ? lightPanel()
-                              : tool == 'color'
+                              : tab == 'color'
                                   ? colorPanel()
                                   : toolsPanel(),
                     ),
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: busy ? null : choose,
+                  onPressed: busy
+                      ? null
+                      : openPhoto,
                   icon: const Icon(
                     Icons.photo_library_outlined,
                   ),
