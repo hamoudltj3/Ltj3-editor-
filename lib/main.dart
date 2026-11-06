@@ -1,5 +1,6 @@
 
-import 'dart:async';
+import 'dart:convert';
+import 'dart:html' as html;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -14,57 +15,69 @@ void main() {
 }
 
 const bg = Color(0xFF080808);
-const panel = Color(0xFF171717);
-const tile = Color(0xFF262626);
-const silver = Color(0xFFBDBDBD);
+const panel = Color(0xFF191919);
+const surface = Color(0xFF292929);
+const silver = Color(0xFFC8C8C8);
+const muted = Color(0xFF888888);
 
-class Preset {
+double clamp(num n, double a, double b) =>
+    n.clamp(a, b).toDouble();
+
+class Look {
   final String name;
-  final double exposure;
-  final double contrast;
-  final double saturation;
-  final double temperature;
-  final double fade;
+  final double exp, con, sat, temp, fade;
 
-  const Preset(
+  const Look(
     this.name,
-    this.exposure,
-    this.contrast,
-    this.saturation,
-    this.temperature,
+    this.exp,
+    this.con,
+    this.sat,
+    this.temp,
     this.fade,
   );
 }
 
-const presets = <Preset>[
-  Preset('LTJ3 01', .02, .06, .07, .02, 0),
-  Preset('LTJ3 02', -.05, .10, -.14, -.05, 0),
-  Preset('LTJ3 03', .05, .04, .18, .04, 0),
-  Preset('LTJ3 04', -.02, -.04, -.22, -.02, .08),
-  Preset('LTJ3 05', -.06, .16, -.04, -.05, 0),
-  Preset('LTJ3 06', .08, -.09, -.10, .09, .07),
-  Preset('LTJ3 07', .02, .11, .21, .02, 0),
-  Preset('LTJ3 08', -.01, .06, -.25, -.06, .02),
-  Preset('LTJ3 09', .01, .15, -1, 0, 0),
-  Preset('LTJ3 10', -.05, .12, -.16, .04, .02),
-  Preset('LTJ3 11', .03, .14, .08, .06, 0),
-  Preset('LTJ3 12', -.03, -.03, -.32, .09, .12),
-  Preset('LTJ3 13', -.06, .08, -.17, -.08, .03),
-  Preset('LTJ3 14', .04, .09, .11, .12, .02),
-  Preset('LTJ3 15', -.09, .17, -.29, -.09, 0),
-  Preset('LTJ3 16', .02, .19, -1, 0, 0),
-  Preset('LTJ3 17', -.02, .14, .18, -.06, .01),
-  Preset('LTJ3 18', .05, -.06, -.19, .02, .10),
-  Preset('LTJ3 19', -.04, .08, -.65, -.04, .03),
-  Preset('LTJ3 20', -.03, .20, -.06, .08, 0),
+// 20 distinct LTJ3 signature looks.
+// Values are stronger than the earlier version.
+const looks = <Look>[
+  Look('LTJ3 01', .10, .18, .22, .06, 0),
+  Look('LTJ3 02', -.15, .30, -.25, -.10, 0),
+  Look('LTJ3 03', .15, .13, .35, .13, 0),
+  Look('LTJ3 04', .04, -.15, -.30, -.12, .16),
+  Look('LTJ3 05', -.20, .38, -.12, -.08, 0),
+  Look('LTJ3 06', .20, -.18, -.22, .20, .16),
+  Look('LTJ3 07', .10, .27, .40, .09, 0),
+  Look('LTJ3 08', -.12, .22, -.40, -.20, .05),
+  Look('LTJ3 09', .04, .38, -1, 0, 0),
+  Look('LTJ3 10', -.18, .30, -.30, .14, .03),
+  Look('LTJ3 11', .14, .28, .24, .10, 0),
+  Look('LTJ3 12', -.10, -.12, -.48, .18, .22),
+  Look('LTJ3 13', -.20, .25, -.38, -.22, .04),
+  Look('LTJ3 14', .17, .20, .19, .24, 0),
+  Look('LTJ3 15', -.25, .40, -.45, -.15, 0),
+  Look('LTJ3 16', .08, .43, -1, 0, 0),
+  Look('LTJ3 17', -.10, .35, .32, -.16, 0),
+  Look('LTJ3 18', .18, -.20, -.40, .06, .22),
+  Look('LTJ3 19', -.16, .27, -.80, -.10, .05),
+  Look('LTJ3 20', -.12, .45, .12, .16, 0),
 ];
 
-class EditData {
-  int preset = -1;
+const textureNames = [
+  'NONE',
+  'FINE GRAIN',
+  'FILM HAZE',
+  'WARM GLOW',
+  'COOL GLOW',
+  'ROSE LEAK',
+  'SOFT BOKEH',
+  'VINTAGE',
+];
+
+class Edit {
+  int filter = -1;
   int texture = 0;
   int rotation = 0;
   bool flip = false;
-
   String ratio = 'Original';
 
   double strength = 1;
@@ -76,335 +89,348 @@ class EditData {
   double shadows = 0;
   double fade = 0;
   double vignette = 0;
-  double grain = 0;
-  double textureStrength = .35;
   double sharpen = 0;
+  double textureAmount = .45;
 
-  EditData copy() {
-    return EditData()
-      ..preset = preset
-      ..texture = texture
-      ..rotation = rotation
-      ..flip = flip
-      ..ratio = ratio
-      ..strength = strength
-      ..exposure = exposure
-      ..contrast = contrast
-      ..saturation = saturation
-      ..temperature = temperature
-      ..highlights = highlights
-      ..shadows = shadows
-      ..fade = fade
-      ..vignette = vignette
-      ..grain = grain
-      ..textureStrength = textureStrength
-      ..sharpen = sharpen;
+  Edit copy() => Edit()
+    ..filter = filter
+    ..texture = texture
+    ..rotation = rotation
+    ..flip = flip
+    ..ratio = ratio
+    ..strength = strength
+    ..exposure = exposure
+    ..contrast = contrast
+    ..saturation = saturation
+    ..temperature = temperature
+    ..highlights = highlights
+    ..shadows = shadows
+    ..fade = fade
+    ..vignette = vignette
+    ..sharpen = sharpen
+    ..textureAmount = textureAmount;
+
+  Map<String, dynamic> toJson() => {
+    'filter': filter,
+    'texture': texture,
+    'rotation': rotation,
+    'flip': flip,
+    'ratio': ratio,
+    'strength': strength,
+    'exposure': exposure,
+    'contrast': contrast,
+    'saturation': saturation,
+    'temperature': temperature,
+    'highlights': highlights,
+    'shadows': shadows,
+    'fade': fade,
+    'vignette': vignette,
+    'sharpen': sharpen,
+    'textureAmount': textureAmount,
+  };
+
+  factory Edit.fromJson(Map<String, dynamic> j) {
+    double d(String key, double fallback) =>
+        (j[key] is num)
+            ? (j[key] as num).toDouble()
+            : fallback;
+
+    return Edit()
+      ..filter = (j['filter'] as num?)?.toInt() ?? -1
+      ..texture = (j['texture'] as num?)?.toInt() ?? 0
+      ..rotation = (j['rotation'] as num?)?.toInt() ?? 0
+      ..flip = j['flip'] == true
+      ..ratio = j['ratio']?.toString() ?? 'Original'
+      ..strength = d('strength', 1)
+      ..exposure = d('exposure', 0)
+      ..contrast = d('contrast', 0)
+      ..saturation = d('saturation', 0)
+      ..temperature = d('temperature', 0)
+      ..highlights = d('highlights', 0)
+      ..shadows = d('shadows', 0)
+      ..fade = d('fade', 0)
+      ..vignette = d('vignette', 0)
+      ..sharpen = d('sharpen', 0)
+      ..textureAmount = d('textureAmount', .45);
   }
 }
 
-double limit(num v, double low, double high) =>
-    v.clamp(low, high).toDouble();
+class SavedLook {
+  final String name;
+  final Edit settings;
 
-img.Image resizePreview(img.Image source, int maximum) {
-  final w = source.width;
-  final h = source.height;
+  SavedLook(this.name, this.settings);
 
-  if (math.max(w, h) <= maximum) {
-    return img.copyResize(
-      source,
-      width: w,
-      height: h,
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'settings': settings.toJson(),
+  };
+
+  factory SavedLook.fromJson(Map<String, dynamic> j) {
+    return SavedLook(
+      j['name'].toString(),
+      Edit.fromJson(
+        Map<String, dynamic>.from(j['settings'] as Map),
+      ),
     );
   }
-
-  if (w >= h) {
-    return img.copyResize(source, width: maximum);
-  }
-
-  return img.copyResize(source, height: maximum);
 }
 
-double randomAt(int x, int y, int seed) {
-  final n = math.sin(
-    x * 12.9898 + y * 78.233 + seed * 37.719,
+// Smooth mathematical helpers.
+double smooth(double x) => x * x * (3 - 2 * x);
+
+double hash(int x, int y, int seed) {
+  final v = math.sin(
+    x * 127.1 + y * 311.7 + seed * 74.7,
   ) * 43758.5453;
-
-  return n - n.floorToDouble();
+  return v - v.floor();
 }
 
-img.Image processPhoto(img.Image source, EditData e) {
-  final preset = e.preset < 0 ? null : presets[e.preset];
+double noise(double x, double y, int seed) {
+  final ix = x.floor();
+  final iy = y.floor();
+  final fx = smooth(x - ix);
+  final fy = smooth(y - iy);
 
-  final exposure = limit(
-    e.exposure +
-        (preset?.exposure ?? 0) * e.strength,
-    -.7,
-    .7,
+  final a = hash(ix, iy, seed);
+  final b = hash(ix + 1, iy, seed);
+  final c = hash(ix, iy + 1, seed);
+  final d = hash(ix + 1, iy + 1, seed);
+
+  return (a + (b - a) * fx) * (1 - fy) +
+      (c + (d - c) * fx) * fy;
+}
+
+double glow(double x, double y, double radius) {
+  return math.exp(
+    -(x * x + y * y) / (2 * radius * radius),
   );
+}
 
-  final contrast = limit(
-    1 +
-        e.contrast +
-        (preset?.contrast ?? 0) * e.strength,
-    .5,
-    1.7,
+img.Image scaled(img.Image src, int maxSide) {
+  if (math.max(src.width, src.height) <= maxSide) {
+    return img.Image.from(src);
+  }
+  return src.width > src.height
+      ? img.copyResize(src, width: maxSide)
+      : img.copyResize(src, height: maxSide);
+}
+
+img.Image process(img.Image original, Edit s) {
+  final preset = s.filter >= 0 &&
+          s.filter < looks.length
+      ? looks[s.filter]
+      : null;
+
+  final exposure = clamp(
+    s.exposure + (preset?.exp ?? 0) * s.strength,
+    -.8,
+    .8,
   );
-
-  final saturation = limit(
-    1 +
-        e.saturation +
-        (preset?.saturation ?? 0) * e.strength,
+  final contrast = clamp(
+    1 + s.contrast +
+        (preset?.con ?? 0) * s.strength,
+    .45,
+    1.75,
+  );
+  final sat = clamp(
+    1 + s.saturation +
+        (preset?.sat ?? 0) * s.strength,
     0,
     2,
   );
-
-  final temperature = limit(
-    e.temperature +
-        (preset?.temperature ?? 0) * e.strength,
-    -.3,
-    .3,
+  final temp = clamp(
+    s.temperature +
+        (preset?.temp ?? 0) * s.strength,
+    -.4,
+    .4,
   );
-
-  final fade = limit(
-    e.fade + (preset?.fade ?? 0) * e.strength,
+  final fading = clamp(
+    s.fade + (preset?.fade ?? 0) * s.strength,
     0,
-    .35,
+    .4,
   );
 
-  final output = source.convert(
+  img.Image out = original.convert(
     format: img.Format.uint8,
     numChannels: 3,
   );
 
-  final w = output.width;
-  final h = output.height;
+  final w = out.width;
+  final h = out.height;
   final gain = math.pow(2, exposure).toDouble();
 
-  for (final pixel in output) {
-    final x = pixel.x;
-    final y = pixel.y;
+  for (final p in out) {
+    final x = p.x;
+    final y = p.y;
+    final nx = x / w;
+    final ny = y / h;
 
-    double r = pixel.r / 255;
-    double g = pixel.g / 255;
-    double b = pixel.b / 255;
+    double r = p.r / 255;
+    double g = p.g / 255;
+    double b = p.b / 255;
 
-    final luminance =
-        .2126 * r + .7152 * g + .0722 * b;
+    final lum = clamp(
+      .2126 * r + .7152 * g + .0722 * b,
+      0,
+      1,
+    );
 
-    final shadowWeight =
-        math.pow(1 - luminance, 2).toDouble();
+    final shadow = (1 - lum) * (1 - lum);
+    final highlight = lum * lum;
 
-    final highlightWeight =
-        math.pow(luminance, 2).toDouble();
+    final tone = s.shadows * shadow * .23 +
+        s.highlights * highlight * .20;
 
-    final tone =
-        e.shadows * shadowWeight * .23 +
-        e.highlights * highlightWeight * .23;
-
-    r = ((r * gain + tone + temperature * .20 - .5) *
+    r = ((r * gain + tone + temp * .18 - .5) *
             contrast) +
         .5;
-
     g = ((g * gain + tone - .5) * contrast) + .5;
-
-    b = ((b * gain + tone - temperature * .20 - .5) *
+    b = ((b * gain + tone - temp * .18 - .5) *
             contrast) +
         .5;
 
-    final grey = .2126 * r + .7152 * g + .0722 * b;
+    final gray = .2126 * r + .7152 * g + .0722 * b;
+    r = gray + (r - gray) * sat;
+    g = gray + (g - gray) * sat;
+    b = gray + (b - gray) * sat;
 
-    r = grey + (r - grey) * saturation;
-    g = grey + (g - grey) * saturation;
-    b = grey + (b - grey) * saturation;
+    r = r * (1 - fading) + fading * .5;
+    g = g * (1 - fading) + fading * .5;
+    b = b * (1 - fading) + fading * .5;
 
-    r = r * (1 - fade) + fade * .5;
-    g = g * (1 - fade) + fade * .5;
-    b = b * (1 - fade) + fade * .5;
-
-    final dx = (x - w / 2) / (w / 2);
-    final dy = (y - h / 2) / (h / 2);
-
-    final distance = limit(
+    final dx = (nx - .5) * 2;
+    final dy = (ny - .5) * 2;
+    final radial = clamp(
       math.sqrt(dx * dx + dy * dy) / math.sqrt2,
       0,
       1,
     );
 
-    final edge = math.pow(distance, 1.8).toDouble();
+    final edge = 1 -
+        s.vignette *
+            math.pow(radial, 2).toDouble() *
+            .7;
+    r *= edge;
+    g *= edge;
+    b *= edge;
 
-    final vignette =
-        1 - e.vignette * edge * .72;
+    final amount = s.textureAmount;
 
-    r *= vignette;
-    g *= vignette;
-    b *= vignette;
-
-    if (e.grain > 0) {
-      final noise =
-          (randomAt(x, y, 7) - .5) * e.grain * .13;
-
-      r += noise;
-      g += noise;
-      b += noise;
+    // Grain: very subtle tonal variation.
+    if (s.texture == 1 || s.texture == 7) {
+      final variation = hash(x, y, 31) - .5;
+      final grain = variation *
+          amount *
+          (s.texture == 7 ? .09 : .055);
+      r += grain;
+      g += grain;
+      b += grain;
     }
 
-    if (e.texture > 0) {
-      final amount = e.textureStrength;
-
-      if (e.texture <= 4) {
-        final size = e.texture.isEven ? 15 : 23;
-
-        final cellX = x ~/ size;
-        final cellY = y ~/ size;
-
-        final chance = randomAt(
-          cellX,
-          cellY,
-          e.texture * 29,
-        );
-
-        final px =
-            randomAt(cellX, cellY, 43) * size;
-
-        final py =
-            randomAt(cellX, cellY, 57) * size;
-
-        if (chance > .975 &&
-            ((x % size) - px).abs() < 1.5 &&
-            ((y % size) - py).abs() < 1.5) {
-          r += amount * .45;
-          g += amount * .45;
-          b += amount * .45;
-        }
-
-        if (e.texture >= 3) {
-          final linePosition =
-              w * (e.texture == 3 ? .30 : .75);
-
-          if ((x -
-                      linePosition -
-                      math.sin(y * .02) * 2)
-                  .abs() <
-              .65) {
-            r += amount * .19;
-            g += amount * .19;
-            b += amount * .19;
-          }
-        }
-      }
-
-      if (e.texture >= 5 && e.texture <= 7) {
-        final cx = e.texture == 5
-            ? -.18
-            : e.texture == 6
-                ? 1.18
-                : .5;
-
-        final cy = e.texture == 7 ? -.25 : .5;
-
-        final nx = x / w;
-        final ny = y / h;
-
-        final d =
-            math.pow((nx - cx) * 1.4, 2) +
-            math.pow((ny - cy) * 1.4, 2);
-
-        final light =
-            math.exp(-d * 5) * amount * .44;
-
-        final rr = e.texture == 7 ? .65 : 1.0;
-        final gg = e.texture == 7 ? .65 : .40;
-        final bb = e.texture == 7 ? 1.0 : .20;
-
-        r = r * (1 - light) + rr * light;
-        g = g * (1 - light) + gg * light;
-        b = b * (1 - light) + bb * light;
-      }
-
-      if (e.texture >= 8) {
-        double glow = 0;
-
-        final count = e.texture == 8 ? 4 : 7;
-
-        for (int i = 0; i < count; i++) {
-          final cx = randomAt(i, 2, 30);
-          final cy = randomAt(i, 3, 40);
-
-          final radius =
-              .03 + randomAt(i, 5, 50) * .06;
-
-          final ddx = x / w - cx;
-          final ddy = y / h - cy;
-
-          final dist = math.sqrt(
-            ddx * ddx + ddy * ddy,
-          );
-
-          glow += limit(
-            1 - dist / radius,
-            0,
-            1,
-          ) * .4;
-        }
-
-        final mix = limit(
-          glow * amount,
-          0,
-          .35,
-        );
-
-        r = r * (1 - mix) + mix;
-        g = g * (1 - mix) + mix * .85;
-        b = b * (1 - mix) + mix * .70;
-      }
+    // Film haze: smooth large-scale texture.
+    if (s.texture == 2 || s.texture == 7) {
+      final n =
+          noise(nx * 4, ny * 4, 13) * .65 +
+          noise(nx * 9, ny * 9, 29) * .35;
+      final alpha = clamp(
+        n * amount * .18,
+        0,
+        .18,
+      );
+      r = r * (1 - alpha) + .76 * alpha;
+      g = g * (1 - alpha) + .73 * alpha;
+      b = b * (1 - alpha) + .70 * alpha;
     }
 
-    pixel.r = (limit(r, 0, 1) * 255).round();
-    pixel.g = (limit(g, 0, 1) * 255).round();
-    pixel.b = (limit(b, 0, 1) * 255).round();
+    // Light leaks: broad, transparent gradients.
+    if (s.texture >= 3 && s.texture <= 5) {
+      final cx = s.texture == 3
+          ? -.10
+          : s.texture == 4
+              ? 1.10
+              : .45;
+      final cy = s.texture == 5 ? -.20 : .45;
+
+      final strength = glow(
+        nx - cx,
+        ny - cy,
+        .5,
+      ) * amount * .35;
+
+      final cr = s.texture == 4 ? .38 : 1.0;
+      final cg = s.texture == 4
+          ? .65
+          : s.texture == 5
+              ? .38
+              : .68;
+      final cb = s.texture == 4
+          ? 1.0
+          : s.texture == 5
+              ? .72
+              : .30;
+
+      r = r * (1 - strength) + cr * strength;
+      g = g * (1 - strength) + cg * strength;
+      b = b * (1 - strength) + cb * strength;
+    }
+
+    // Bokeh: diffuse atmospheric highlights.
+    if (s.texture == 6) {
+      double light = 0;
+
+      for (int i = 0; i < 6; i++) {
+        final bx = hash(i, 2, 30);
+        final by = hash(i, 3, 40);
+        final radius =
+            .035 + hash(i, 5, 50) * .055;
+
+        final dd = math.sqrt(
+          math.pow(nx - bx, 2) +
+              math.pow(ny - by, 2),
+        );
+
+        light += glow(dd, 0, radius) * .12;
+      }
+
+      final alpha = clamp(
+        light * amount,
+        0,
+        .22,
+      );
+      r = r * (1 - alpha) + alpha;
+      g = g * (1 - alpha) + alpha * .88;
+      b = b * (1 - alpha) + alpha * .70;
+    }
+
+    p.r = (clamp(r, 0, 1) * 255).round();
+    p.g = (clamp(g, 0, 1) * 255).round();
+    p.b = (clamp(b, 0, 1) * 255).round();
   }
 
-  img.Image result = output;
-
-  if (e.sharpen > .01) {
+  if (s.sharpen > .01) {
     final blurred = img.gaussianBlur(
-      result,
+      out,
       radius: 1,
     );
+    final k = s.sharpen * .65;
 
-    final k = e.sharpen * .65;
-
-    for (final p in result) {
+    for (final p in out) {
       final q = blurred.getPixel(p.x, p.y);
-
-      p.r = limit(
-        p.r + (p.r - q.r) * k,
-        0,
-        255,
-      ).round();
-
-      p.g = limit(
-        p.g + (p.g - q.g) * k,
-        0,
-        255,
-      ).round();
-
-      p.b = limit(
-        p.b + (p.b - q.b) * k,
-        0,
-        255,
-      ).round();
+      p.r = clamp(p.r + (p.r - q.r) * k, 0, 255).round();
+      p.g = clamp(p.g + (p.g - q.g) * k, 0, 255).round();
+      p.b = clamp(p.b + (p.b - q.b) * k, 0, 255).round();
     }
   }
 
-  if (e.flip) {
-    result = img.flipHorizontal(result);
+  if (s.flip) {
+    out = img.flipHorizontal(out);
   }
 
-  if (e.rotation != 0) {
-    result = img.copyRotate(
-      result,
-      angle: e.rotation * 90,
+  if (s.rotation != 0) {
+    out = img.copyRotate(
+      out,
+      angle: s.rotation * 90,
     );
   }
 
@@ -416,11 +442,10 @@ img.Image processPhoto(img.Image source, EditData e) {
     '16:9': 16 / 9,
   };
 
-  if (ratios.containsKey(e.ratio)) {
-    final ratio = ratios[e.ratio]!;
-
-    int cw = result.width;
-    int ch = result.height;
+  if (ratios.containsKey(s.ratio)) {
+    final ratio = ratios[s.ratio]!;
+    var cw = out.width;
+    var ch = out.height;
 
     if (cw / ch > ratio) {
       cw = (ch * ratio).round();
@@ -428,16 +453,16 @@ img.Image processPhoto(img.Image source, EditData e) {
       ch = (cw / ratio).round();
     }
 
-    result = img.copyCrop(
-      result,
-      x: (result.width - cw) ~/ 2,
-      y: (result.height - ch) ~/ 2,
+    out = img.copyCrop(
+      out,
+      x: (out.width - cw) ~/ 2,
+      y: (out.height - ch) ~/ 2,
       width: cw,
       height: ch,
     );
   }
 
-  return result;
+  return out;
 }
 
 class LTJ3App extends StatelessWidget {
@@ -446,106 +471,151 @@ class LTJ3App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'LTJ3 EDITOR',
       debugShowCheckedModeBanner: false,
+      title: 'LTJ3 EDITOR',
       theme: ThemeData.dark(
         useMaterial3: true,
       ).copyWith(
         scaffoldBackgroundColor: bg,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: bg,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
         colorScheme: const ColorScheme.dark(
           primary: Colors.white,
           onPrimary: Colors.black,
           surface: panel,
         ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: bg,
+          foregroundColor: Colors.white,
+        ),
         sliderTheme: const SliderThemeData(
           activeTrackColor: Colors.white,
-          inactiveTrackColor: Color(0xFF444444),
+          inactiveTrackColor: surface,
           thumbColor: Colors.white,
           trackHeight: 3,
         ),
       ),
-      home: const LTJ3Home(),
+      home: const Studio(),
     );
   }
 }
 
-class LTJ3Home extends StatefulWidget {
-  const LTJ3Home({super.key});
+class Studio extends StatefulWidget {
+  const Studio({super.key});
 
   @override
-  State<LTJ3Home> createState() => _LTJ3HomeState();
+  State<Studio> createState() => _StudioState();
 }
 
-class _LTJ3HomeState extends State<LTJ3Home> {
+class _StudioState extends State<Studio> {
   final picker = ImagePicker();
 
   bool started = false;
   bool gallery = true;
   bool busy = false;
-  bool compare = false;
-  bool exportPng = false;
+  bool comparing = false;
 
-  String section = 'Filters';
-  int textureCategory = 0;
+  String tab = 'Filters';
 
   final photos = <Uint8List>[];
-  final undoHistory = <EditData>[];
-  final redoHistory = <EditData>[];
+  final custom = <SavedLook>[];
+  final undoHistory = <Edit>[];
+  final redoHistory = <Edit>[];
 
-  img.Image? originalImage;
+  img.Image? original;
   img.Image? previewSource;
-
-  Uint8List? previewBytes;
   Uint8List? originalPreview;
+  Uint8List? currentPreview;
 
-  final filterThumbs =
-      List<Uint8List?>.filled(21, null);
+  List<Uint8List?> filterThumbs =
+      List.filled(21, null);
+  List<Uint8List?> textureThumbs =
+      List.filled(textureNames.length, null);
 
-  final textureThumbs =
-      List<Uint8List?>.filled(10, null);
-
-  EditData edit = EditData();
-  EditData? sliderStart;
-
-  Timer? previewTimer;
+  Edit edit = Edit();
+  Edit? sliderBefore;
 
   @override
-  void dispose() {
-    previewTimer?.cancel();
-    super.dispose();
+  void initState() {
+    super.initState();
+    loadCustom();
   }
 
-  void message(String text) {
+  void notify(String text) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text)),
     );
   }
 
-  void saveHistory() {
-    undoHistory.add(edit.copy());
+  void loadCustom() {
+    try {
+      final raw =
+          html.window.localStorage['ltj3_custom_v7'];
 
+      if (raw == null) return;
+
+      final items = jsonDecode(raw) as List;
+
+      custom.clear();
+
+      for (final item in items) {
+        custom.add(
+          SavedLook.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        );
+      }
+    } catch (_) {
+      custom.clear();
+    }
+  }
+
+  void persistCustom() {
+    try {
+      html.window.localStorage['ltj3_custom_v7'] =
+          jsonEncode(
+        custom.map((e) => e.toJson()).toList(),
+      );
+    } catch (_) {
+      notify('Unable to store custom filters');
+    }
+  }
+
+  void remember() {
+    undoHistory.add(edit.copy());
     if (undoHistory.length > 30) {
       undoHistory.removeAt(0);
     }
-
     redoHistory.clear();
   }
 
-  Future<void> importPhotos() async {
+  void change(VoidCallback callback) {
+    if (busy) return;
+    remember();
+    setState(callback);
+    updatePreview();
+  }
+
+  void undo() {
+    if (busy || undoHistory.isEmpty) return;
+    redoHistory.add(edit.copy());
+    setState(() => edit = undoHistory.removeLast());
+    updatePreview();
+  }
+
+  void redo() {
+    if (busy || redoHistory.isEmpty) return;
+    undoHistory.add(edit.copy());
+    setState(() => edit = redoHistory.removeLast());
+    updatePreview();
+  }
+
+  Future<void> importImages() async {
     if (busy) return;
 
     try {
       final files = await picker.pickMultiImage(
         imageQuality: 100,
       );
-
       if (files.isEmpty) return;
 
       final loaded = <Uint8List>[];
@@ -555,288 +625,310 @@ class _LTJ3HomeState extends State<LTJ3Home> {
       }
 
       if (!mounted) return;
+      setState(() => photos.addAll(loaded));
 
-      setState(() {
-        photos.addAll(loaded);
-      });
-
-      if (originalImage == null) {
-        await openPhoto(loaded.first);
+      if (original == null) {
+        await openImage(loaded.first);
       }
     } catch (_) {
-      message('Could not import photos');
+      notify('Could not import photos');
     }
   }
 
-  Future<void> openPhoto(Uint8List data) async {
+  Future<void> openImage(Uint8List bytes) async {
     if (busy) return;
-
     setState(() => busy = true);
 
     try {
-      var decoded = img.decodeImage(data);
-
+      var decoded = img.decodeImage(bytes);
       if (decoded == null) {
         throw Exception('Unsupported image');
       }
 
       decoded = img.bakeOrientation(decoded);
 
-      // Only the preview is resized.
-      // The original stays at full resolution.
-      final small = resizePreview(decoded, 850);
-      final tiny = resizePreview(decoded, 125);
+      final large = scaled(decoded, 1200);
+      // Higher-resolution filter thumbnails.
+      final thumb = scaled(decoded, 280);
 
       final thumbs = <Uint8List?>[];
 
       thumbs.add(
         Uint8List.fromList(
-          img.encodeJpg(tiny, quality: 88),
+          img.encodeJpg(thumb, quality: 95),
         ),
       );
 
-      for (int i = 0; i < presets.length; i++) {
-        final setting = EditData()..preset = i;
-
-        final result = processPhoto(
-          tiny,
-          setting,
-        );
+      for (int i = 0; i < 20; i++) {
+        final state = Edit()..filter = i;
 
         thumbs.add(
           Uint8List.fromList(
-            img.encodeJpg(result, quality: 82),
+            img.encodeJpg(
+              process(thumb, state),
+              quality: 94,
+            ),
           ),
         );
       }
 
       final effects = <Uint8List?>[];
 
-      for (int i = 0; i < 10; i++) {
-        final setting = EditData()
+      for (int i = 0; i < textureNames.length; i++) {
+        final state = Edit()
           ..texture = i
-          ..textureStrength = .8;
-
-        final result = processPhoto(
-          tiny,
-          setting,
-        );
+          ..textureAmount = .85;
 
         effects.add(
           Uint8List.fromList(
-            img.encodeJpg(result, quality: 82),
+            img.encodeJpg(
+              process(thumb, state),
+              quality: 93,
+            ),
           ),
         );
       }
 
       final clean = Uint8List.fromList(
-        img.encodeJpg(small, quality: 95),
+        img.encodeJpg(large, quality: 96),
       );
 
       if (!mounted) return;
 
       setState(() {
-        originalImage = decoded;
-        previewSource = small;
+        original = decoded;
+        previewSource = large;
         originalPreview = clean;
-        previewBytes = clean;
-
-        filterThumbs.setAll(0, thumbs);
-        textureThumbs.setAll(0, effects);
-
-        edit = EditData();
+        currentPreview = clean;
+        filterThumbs = thumbs;
+        textureThumbs = effects;
+        edit = Edit();
         undoHistory.clear();
         redoHistory.clear();
-
         gallery = false;
-        section = 'Filters';
+        tab = 'Filters';
       });
     } catch (_) {
-      message('Unable to open image');
+      notify('Unable to open photo');
     } finally {
-      if (mounted) {
-        setState(() => busy = false);
-      }
+      if (mounted) setState(() => busy = false);
     }
-  }
-
-  void schedulePreview() {
-    previewTimer?.cancel();
-
-    previewTimer = Timer(
-      const Duration(milliseconds: 180),
-      () => updatePreview(),
-    );
   }
 
   Future<void> updatePreview() async {
     if (previewSource == null || busy) return;
-
-    final settings = edit.copy();
-    final source = previewSource!;
-
     setState(() => busy = true);
 
     try {
-      final result = processPhoto(
-        source,
-        settings,
+      final result = process(
+        previewSource!,
+        edit.copy(),
       );
-
-      final encoded = Uint8List.fromList(
-        img.encodeJpg(result, quality: 94),
+      final bytes = Uint8List.fromList(
+        img.encodeJpg(result, quality: 96),
       );
 
       if (mounted) {
-        setState(() {
-          previewBytes = encoded;
-        });
+        setState(() => currentPreview = bytes);
       }
     } catch (_) {
-      message('Preview failed');
+      notify('Preview processing failed');
     } finally {
-      if (mounted) {
-        setState(() => busy = false);
-      }
+      if (mounted) setState(() => busy = false);
     }
   }
 
-  void change(VoidCallback action) {
-    if (busy) return;
+  Future<void> saveCustomFilter() async {
+    if (original == null) return;
 
-    saveHistory();
-    setState(action);
-    schedulePreview();
-  }
+    final controller = TextEditingController();
 
-  void undo() {
-    if (busy || undoHistory.isEmpty) return;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: panel,
+        title: const Text('CREATE YOUR FILTER'),
+        content: TextField(
+          controller: controller,
+          maxLength: 32,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Filter name',
+            hintText: 'My Signature',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(
+                dialogContext,
+                controller.text.trim(),
+              );
+            },
+            child: const Text('Save Filter'),
+          ),
+        ],
+      ),
+    );
 
-    redoHistory.add(edit.copy());
+    controller.dispose();
+
+    if (name == null || name.isEmpty) return;
 
     setState(() {
-      edit = undoHistory.removeLast();
+      custom.add(SavedLook(name, edit.copy()));
+      tab = 'My Filters';
     });
 
-    schedulePreview();
+    persistCustom();
+    notify('Filter saved: $name');
   }
 
-  void redo() {
-    if (busy || redoHistory.isEmpty) return;
+  void applyCustom(SavedLook saved) {
+    change(() {
+      edit = saved.settings.copy();
+    });
+  }
 
-    undoHistory.add(edit.copy());
-
+  void deleteCustom(int index) {
     setState(() {
-      edit = redoHistory.removeLast();
+      custom.removeAt(index);
     });
-
-    schedulePreview();
+    persistCustom();
   }
 
-  Future<void> exportPhoto() async {
-    if (originalImage == null || busy) return;
-
+  Future<void> exportPhoto(bool png) async {
+    if (original == null || busy) return;
     setState(() => busy = true);
 
     try {
-      // Process the full-resolution original.
-      final result = processPhoto(
-        originalImage!,
-        edit.copy(),
+      final result = process(original!, edit.copy());
+
+      final bytes = Uint8List.fromList(
+        png
+            ? img.encodePng(result)
+            : img.encodeJpg(result, quality: 100),
       );
 
-      final Uint8List bytes;
-
-      if (exportPng) {
-        bytes = Uint8List.fromList(
-          img.encodePng(result),
-        );
-      } else {
-        bytes = Uint8List.fromList(
-          img.encodeJpg(result, quality: 100),
-        );
-      }
-
-      final filename = exportPng
-          ? 'LTJ3_EDITOR_ULTRA_HD.png'
-          : 'LTJ3_EDITOR_ULTRA_HD.jpg';
+      final name = png
+          ? 'LTJ3_ULTRA_HD.png'
+          : 'LTJ3_ULTRA_HD.jpg';
 
       await Share.shareXFiles(
         [
           XFile.fromData(
             bytes,
-            name: filename,
-            mimeType: exportPng
+            name: name,
+            mimeType: png
                 ? 'image/png'
                 : 'image/jpeg',
           ),
         ],
-        fileNameOverrides: [filename],
+        fileNameOverrides: [name],
       );
     } catch (_) {
-      message(
-        'Export failed. Try JPEG or a smaller image.',
+      notify(
+        'Export failed. Try JPEG or a smaller photo.',
       );
     } finally {
-      if (mounted) {
-        setState(() => busy = false);
-      }
+      if (mounted) setState(() => busy = false);
     }
   }
 
-  Widget customButton(
-    String label,
-    bool selected,
-    VoidCallback callback,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 4,
-      ),
-      child: TextButton(
-        onPressed: callback,
-        style: TextButton.styleFrom(
-          foregroundColor: selected
-              ? Colors.white
-              : Colors.white60,
-          backgroundColor: selected
-              ? const Color(0xFF3B3B3B)
-              : tile,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 17,
-            vertical: 13,
+  void showExport() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: panel,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'LTJ3 ULTRA HD EXPORT',
+                style: TextStyle(
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                title: const Text('JPEG MAX QUALITY'),
+                subtitle: const Text('Quality 100'),
+                leading: const Icon(Icons.image_outlined),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  exportPhoto(false);
+                },
+              ),
+              ListTile(
+                title: const Text('PNG LOSSLESS'),
+                subtitle:
+                    const Text('Lossless PNG compression'),
+                leading: const Icon(Icons.high_quality),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  exportPhoto(true);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
           ),
-          shape: const StadiumBorder(),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 12),
         ),
       ),
     );
   }
 
-  Widget adjust(
-    String label,
+  Widget pill(
+    String text,
+    bool selected,
+    VoidCallback tap,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: TextButton(
+        onPressed: tap,
+        style: TextButton.styleFrom(
+          backgroundColor:
+              selected ? const Color(0xFF454545) : surface,
+          foregroundColor:
+              selected ? Colors.white : muted,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          shape: const StadiumBorder(),
+        ),
+        child: Text(text),
+      ),
+    );
+  }
+
+  Widget slider(
+    String title,
     double value,
     double min,
     double max,
     ValueChanged<double> callback,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 13,
-        vertical: 3,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
           SizedBox(
-            width: 93,
+            width: 95,
             child: Text(
-              label,
+              title,
               style: const TextStyle(
-                fontSize: 12,
                 color: silver,
+                fontSize: 12,
               ),
             ),
           ),
@@ -844,36 +936,30 @@ class _LTJ3HomeState extends State<LTJ3Home> {
             child: Slider(
               min: min,
               max: max,
-              value: limit(value, min, max),
+              value: clamp(value, min, max),
               onChangeStart: (_) {
-                sliderStart = edit.copy();
+                sliderBefore = edit.copy();
               },
               onChanged: busy
                   ? null
-                  : (v) {
-                      setState(() => callback(v));
-                      // Preview refreshes after releasing
-                      // the slider to keep editing smooth.
-                    },
+                  : (v) => setState(() => callback(v)),
               onChangeEnd: (_) {
-                if (sliderStart != null) {
-                  undoHistory.add(sliderStart!);
+                if (sliderBefore != null) {
+                  undoHistory.add(sliderBefore!);
                   redoHistory.clear();
-                  sliderStart = null;
+                  sliderBefore = null;
                 }
-
-                schedulePreview();
+                updatePreview();
               },
             ),
           ),
           SizedBox(
-            width: 42,
+            width: 38,
             child: Text(
               value.toStringAsFixed(2),
-              textAlign: TextAlign.end,
               style: const TextStyle(
                 fontSize: 11,
-                color: silver,
+                color: muted,
               ),
             ),
           ),
@@ -882,7 +968,7 @@ class _LTJ3HomeState extends State<LTJ3Home> {
     );
   }
 
-  Widget welcomeScreen() {
+  Widget welcome() {
     return Scaffold(
       backgroundColor: bg,
       body: SafeArea(
@@ -894,60 +980,57 @@ class _LTJ3HomeState extends State<LTJ3Home> {
             children: [
               const SizedBox(height: 40),
               const Text(
-                'LTJ3  /  CREATIVE STUDIO',
+                'LTJ3 / CREATIVE STUDIO',
                 style: TextStyle(
                   color: silver,
-                  fontSize: 10,
+                  fontSize: 11,
                   letterSpacing: 4,
                 ),
               ),
               const Spacer(),
               const Icon(
                 Icons.auto_awesome,
-                size: 28,
-                color: Colors.white70,
+                color: silver,
+                size: 30,
               ),
               const SizedBox(height: 22),
               const Text(
                 'LTJ3',
                 style: TextStyle(
                   fontFamily: 'Georgia',
+                  fontStyle: FontStyle.italic,
                   fontSize: 76,
                   fontWeight: FontWeight.w300,
-                  fontStyle: FontStyle.italic,
                   letterSpacing: 5,
-                  color: Colors.white,
                 ),
               ),
               const Text(
                 'E D I T O R',
                 style: TextStyle(
+                  color: silver,
                   fontSize: 15,
                   letterSpacing: 5,
-                  color: silver,
                 ),
               ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 28),
               Container(
-                width: 70,
                 height: 1,
+                width: 70,
                 color: Colors.white38,
               ),
-              const SizedBox(height: 27),
+              const SizedBox(height: 30),
               const Text(
-                'MAKE EVERY MOMENT\nEXTRAORDINARY.',
-                textAlign: TextAlign.center,
+                'CREATE YOUR OWN VISION.',
                 style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 3,
-                  height: 2,
                   color: silver,
+                  fontSize: 12,
+                  letterSpacing: 2,
                 ),
               ),
               const Spacer(),
               SizedBox(
                 width: double.infinity,
-                height: 57,
+                height: 58,
                 child: FilledButton(
                   onPressed: () {
                     setState(() {
@@ -958,35 +1041,23 @@ class _LTJ3HomeState extends State<LTJ3Home> {
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
-                    shape: const StadiumBorder(),
                   ),
-                  child: const Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Icon(Icons.arrow_forward, size: 20),
-                    ],
+                  child: const Text(
+                    'Get Started  →',
+                    style: TextStyle(fontSize: 18),
                   ),
                 ),
               ),
-              const SizedBox(height: 23),
+              const SizedBox(height: 25),
               const Text(
-                'CREATE  ·  REFINE  ·  EXPORT',
+                'CREATE · REFINE · EXPORT',
                 style: TextStyle(
-                  fontSize: 10,
+                  color: muted,
+                  fontSize: 11,
                   letterSpacing: 3,
-                  color: Colors.white54,
                 ),
               ),
-              const SizedBox(height: 36),
+              const SizedBox(height: 35),
             ],
           ),
         ),
@@ -994,13 +1065,11 @@ class _LTJ3HomeState extends State<LTJ3Home> {
     );
   }
 
-  Widget galleryScreen() {
+  Widget galleryView() {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            20, 25, 20, 15,
-          ),
+          padding: const EdgeInsets.all(20),
           child: Row(
             children: [
               const Expanded(
@@ -1008,65 +1077,30 @@ class _LTJ3HomeState extends State<LTJ3Home> {
                   'Your Studio',
                   style: TextStyle(
                     fontFamily: 'Georgia',
-                    fontSize: 29,
-                    fontWeight: FontWeight.w400,
+                    fontSize: 30,
                   ),
                 ),
               ),
-              IconButton(
-                onPressed: importPhotos,
-                icon: const Icon(
-                  Icons.add_circle_outline,
-                ),
+              TextButton.icon(
+                onPressed: importImages,
+                icon: const Icon(Icons.add),
+                label: const Text('Import'),
               ),
             ],
           ),
         ),
-        const Divider(color: tile),
         Expanded(
           child: photos.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.photo_library_outlined,
-                        size: 65,
-                        color: Colors.white38,
-                      ),
-                      const SizedBox(height: 19),
-                      const Text(
-                        'YOUR CREATIVE SPACE',
-                        style: TextStyle(
-                          fontSize: 12,
-                          letterSpacing: 3,
-                          color: silver,
-                        ),
-                      ),
-                      const SizedBox(height: 13),
-                      const Text(
-                        'Every great edit starts here.',
-                        style: TextStyle(
-                          color: Colors.white54,
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      FilledButton.icon(
-                        onPressed: importPhotos,
-                        icon: const Icon(
-                          Icons.add_photo_alternate_outlined,
-                        ),
-                        label: const Text('Import Photos'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                        ),
-                      ),
-                    ],
+                  child: FilledButton.icon(
+                    onPressed: importImages,
+                    icon: const Icon(
+                      Icons.add_photo_alternate,
+                    ),
+                    label: const Text('Import Photos'),
                   ),
                 )
               : GridView.builder(
-                  padding: const EdgeInsets.all(3),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
@@ -1074,24 +1108,21 @@ class _LTJ3HomeState extends State<LTJ3Home> {
                     crossAxisSpacing: 3,
                   ),
                   itemCount: photos.length,
-                  itemBuilder: (context, index) {
-                    return GestureDetector(
-                      onTap: () {
-                        openPhoto(photos[index]);
-                      },
-                      child: Image.memory(
-                        photos[index],
-                        fit: BoxFit.cover,
-                      ),
-                    );
-                  },
+                  itemBuilder: (context, i) =>
+                      GestureDetector(
+                    onTap: () => openImage(photos[i]),
+                    child: Image.memory(
+                      photos[i],
+                      fit: BoxFit.cover,
+                    ),
+                  ),
                 ),
         ),
       ],
     );
   }
 
-  Widget filterPanel() {
+  Widget filtersPanel() {
     return Column(
       children: [
         const SizedBox(height: 12),
@@ -1103,38 +1134,33 @@ class _LTJ3HomeState extends State<LTJ3Home> {
             letterSpacing: 2,
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 128,
+          height: 130,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-            ),
             itemCount: 21,
             itemBuilder: (context, index) {
-              final selected =
-                  edit.preset == index - 1;
+              final active = edit.filter == index - 1;
 
               return GestureDetector(
-                onTap: () => change(() {
-                  edit.preset = index - 1;
-                }),
+                onTap: () {
+                  change(() => edit.filter = index - 1);
+                },
                 child: Container(
-                  width: 98,
-                  margin: const EdgeInsets.only(right: 9),
+                  width: 103,
+                  margin: const EdgeInsets.only(right: 8),
                   child: Column(
                     children: [
                       Container(
-                        width: 96,
-                        height: 96,
+                        width: 100,
+                        height: 100,
                         clipBehavior: Clip.antiAlias,
                         decoration: BoxDecoration(
-                          color: tile,
-                          borderRadius:
-                              BorderRadius.circular(7),
+                          color: surface,
+                          borderRadius: BorderRadius.circular(7),
                           border: Border.all(
-                            color: selected
+                            color: active
                                 ? Colors.white
                                 : Colors.transparent,
                             width: 2,
@@ -1147,16 +1173,14 @@ class _LTJ3HomeState extends State<LTJ3Home> {
                                 fit: BoxFit.cover,
                               ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 7),
                       Text(
                         index == 0
                             ? 'ORIGINAL'
                             : '□ LTJ3 ${index.toString().padLeft(2, '0')}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 10,
-                          color: selected
-                              ? Colors.white
-                              : silver,
+                          color: silver,
                         ),
                       ),
                     ],
@@ -1166,12 +1190,11 @@ class _LTJ3HomeState extends State<LTJ3Home> {
             },
           ),
         ),
-        const SizedBox(height: 13),
-        adjust(
+        slider(
           'Intensity',
           edit.strength,
           0,
-          1,
+          1.5,
           (v) => edit.strength = v,
         ),
       ],
@@ -1179,127 +1202,141 @@ class _LTJ3HomeState extends State<LTJ3Home> {
   }
 
   Widget texturePanel() {
-    final indices = textureCategory == 0
-        ? [0, 1, 2, 3, 4]
-        : textureCategory == 1
-            ? [0, 5, 6, 7]
-            : [0, 8, 9];
-
     return Column(
       children: [
-        const SizedBox(height: 13),
+        const SizedBox(height: 12),
         const Text(
           'LTJ3 TEXTURE STUDIO',
           style: TextStyle(
-            color: silver,
-            fontSize: 11,
             letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 50,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (int i = 0; i < 3; i++)
-                customButton(
-                  [
-                    'NOISE & DUST',
-                    'LIGHT LEAK',
-                    'BOKEH',
-                  ][i],
-                  textureCategory == i,
-                  () => setState(() {
-                    textureCategory = i;
-                  }),
-                ),
-            ],
+            fontSize: 11,
+            color: silver,
           ),
         ),
         const SizedBox(height: 13),
         SizedBox(
-          height: 116,
-          child: ListView(
+          height: 125,
+          child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 9,
-            ),
-            children: [
-              for (final i in indices)
-                GestureDetector(
-                  onTap: () => change(() {
-                    edit.texture = i;
-                  }),
-                  child: Container(
-                    width: 90,
-                    margin:
-                        const EdgeInsets.only(right: 9),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 86,
-                          height: 82,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: edit.texture == i
-                                  ? Colors.white
-                                  : tile,
-                              width: 2,
-                            ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: textureThumbs[i] == null
-                              ? const Icon(Icons.texture)
-                              : Image.memory(
-                                  textureThumbs[i]!,
-                                  fit: BoxFit.cover,
-                                ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          i == 0
-                              ? 'NONE'
-                              : 'FX ${i.toString().padLeft(2, '0')}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: silver,
+            itemCount: textureNames.length,
+            itemBuilder: (context, i) {
+              final selected = edit.texture == i;
+
+              return GestureDetector(
+                onTap: () {
+                  change(() => edit.texture = i);
+                },
+                child: Container(
+                  width: 99,
+                  margin: const EdgeInsets.only(right: 9),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 95,
+                        height: 94,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: selected
+                                ? Colors.white
+                                : surface,
+                            width: 2,
                           ),
                         ),
-                      ],
-                    ),
+                        clipBehavior: Clip.antiAlias,
+                        child: textureThumbs[i] == null
+                            ? const Icon(Icons.texture)
+                            : Image.memory(
+                                textureThumbs[i]!,
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        textureNames[i],
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: silver,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-            ],
+              );
+            },
           ),
         ),
-        if (edit.texture != 0)
-          adjust(
-            'Texture',
-            edit.textureStrength,
-            0,
-            1,
-            (v) => edit.textureStrength = v,
+        slider(
+          'Texture',
+          edit.textureAmount,
+          0,
+          1,
+          (v) => edit.textureAmount = v,
+        ),
+      ],
+    );
+  }
+
+  Widget customPanel() {
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: saveCustomFilter,
+          icon: const Icon(Icons.bookmark_add_outlined),
+          label: const Text('SAVE CURRENT LOOK'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (custom.isEmpty)
+          const Text(
+            'Your saved filters appear here.',
+            style: TextStyle(color: muted),
+          ),
+        for (int i = 0; i < custom.length; i++)
+          ListTile(
+            leading: const Icon(
+              Icons.auto_awesome,
+              color: silver,
+            ),
+            title: Text(custom[i].name),
+            subtitle: const Text('CUSTOM LTJ3 FILTER'),
+            onTap: () => applyCustom(custom[i]),
+            trailing: IconButton(
+              icon: const Icon(
+                Icons.delete_outline,
+                color: muted,
+              ),
+              onPressed: () => deleteCustom(i),
+            ),
           ),
       ],
     );
   }
 
   Widget toolsPanel() {
-    switch (section) {
+    switch (tab) {
       case 'Filters':
-        return filterPanel();
+        return filtersPanel();
+
+      case 'My Filters':
+        return customPanel();
+
+      case 'Texture':
+        return texturePanel();
 
       case 'Light':
         return Column(
           children: [
-            adjust('Exposure', edit.exposure, -.7, .7,
+            slider('Exposure', edit.exposure, -.8, .8,
                 (v) => edit.exposure = v),
-            adjust('Contrast', edit.contrast, -.5, .5,
+            slider('Contrast', edit.contrast, -.5, .5,
                 (v) => edit.contrast = v),
-            adjust('Highlights', edit.highlights, -1, 1,
+            slider('Highlights', edit.highlights, -1, 1,
                 (v) => edit.highlights = v),
-            adjust('Shadows', edit.shadows, -1, 1,
+            slider('Shadows', edit.shadows, -1, 1,
                 (v) => edit.shadows = v),
           ],
         );
@@ -1307,11 +1344,11 @@ class _LTJ3HomeState extends State<LTJ3Home> {
       case 'Color':
         return Column(
           children: [
-            adjust('Temperature', edit.temperature, -.3, .3,
+            slider('Temperature', edit.temperature, -.4, .4,
                 (v) => edit.temperature = v),
-            adjust('Saturation', edit.saturation, -1, 1,
+            slider('Saturation', edit.saturation, -1, 1,
                 (v) => edit.saturation = v),
-            adjust('Fade', edit.fade, 0, .35,
+            slider('Fade', edit.fade, 0, .4,
                 (v) => edit.fade = v),
           ],
         );
@@ -1319,41 +1356,31 @@ class _LTJ3HomeState extends State<LTJ3Home> {
       case 'Details':
         return Column(
           children: [
-            adjust('Sharpen', edit.sharpen, 0, 1,
+            slider('Sharpen', edit.sharpen, 0, 1,
                 (v) => edit.sharpen = v),
-            adjust('Grain', edit.grain, 0, 1,
-                (v) => edit.grain = v),
-            adjust('Vignette', edit.vignette, -1, 1,
+            slider('Vignette', edit.vignette, -1, 1,
                 (v) => edit.vignette = v),
           ],
         );
 
-      case 'Texture':
-        return texturePanel();
-
       case 'Crop':
         return Column(
           children: [
-            const SizedBox(height: 15),
             SizedBox(
-              height: 52,
+              height: 55,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
                   for (final ratio in [
-                    'Original',
-                    '1:1',
-                    '4:5',
-                    '3:4',
-                    '9:16',
-                    '16:9',
+                    'Original', '1:1', '4:5',
+                    '3:4', '9:16', '16:9',
                   ])
-                    customButton(
+                    pill(
                       ratio,
                       edit.ratio == ratio,
-                      () => change(() {
-                        edit.ratio = ratio;
-                      }),
+                      () => change(
+                        () => edit.ratio = ratio,
+                      ),
                     ),
                 ],
               ),
@@ -1363,23 +1390,23 @@ class _LTJ3HomeState extends State<LTJ3Home> {
                   MainAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: () => change(() {
-                    edit.rotation =
-                        (edit.rotation + 3) % 4;
-                  }),
+                  onPressed: () => change(
+                    () => edit.rotation =
+                        (edit.rotation + 3) % 4,
+                  ),
                   icon: const Icon(Icons.rotate_left),
                 ),
                 IconButton(
-                  onPressed: () => change(() {
-                    edit.rotation =
-                        (edit.rotation + 1) % 4;
-                  }),
+                  onPressed: () => change(
+                    () => edit.rotation =
+                        (edit.rotation + 1) % 4,
+                  ),
                   icon: const Icon(Icons.rotate_right),
                 ),
                 IconButton(
-                  onPressed: () => change(() {
-                    edit.flip = !edit.flip;
-                  }),
+                  onPressed: () => change(
+                    () => edit.flip = !edit.flip,
+                  ),
                   icon: const Icon(Icons.flip),
                 ),
               ],
@@ -1388,59 +1415,54 @@ class _LTJ3HomeState extends State<LTJ3Home> {
         );
 
       default:
-        return const SizedBox();
+        return const SizedBox.shrink();
     }
   }
 
-  Widget editorScreen() {
+  Widget editorView() {
     return Column(
       children: [
         Expanded(
           child: GestureDetector(
             onLongPressStart: (_) {
-              setState(() => compare = true);
+              setState(() => comparing = true);
             },
             onLongPressEnd: (_) {
-              setState(() => compare = false);
+              setState(() => comparing = false);
             },
             child: Container(
-              width: double.infinity,
               color: Colors.black,
+              width: double.infinity,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  if ((compare
+                  if ((comparing
                           ? originalPreview
-                          : previewBytes) !=
+                          : currentPreview) !=
                       null)
                     InteractiveViewer(
                       minScale: .5,
                       maxScale: 5,
                       child: Image.memory(
-                        (compare
+                        (comparing
                             ? originalPreview
-                            : previewBytes)!,
+                            : currentPreview)!,
                         fit: BoxFit.contain,
                         gaplessPlayback: true,
                       ),
                     ),
-                  if (compare)
-                    const Positioned(
-                      bottom: 18,
-                      child: Text(
-                        'ORIGINAL',
-                        style: TextStyle(
-                          letterSpacing: 3,
-                        ),
-                      ),
-                    ),
                   if (busy)
                     const Positioned(
-                      top: 14,
-                      right: 14,
+                      top: 15,
+                      right: 15,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                       ),
+                    ),
+                  if (comparing)
+                    const Positioned(
+                      bottom: 15,
+                      child: Text('ORIGINAL'),
                     ),
                 ],
               ),
@@ -1451,83 +1473,62 @@ class _LTJ3HomeState extends State<LTJ3Home> {
           color: panel,
           child: Column(
             children: [
-              const SizedBox(height: 10),
               SizedBox(
-                height: 54,
+                height: 62,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                  ),
                   children: [
                     for (final name in [
                       'Filters',
+                      'My Filters',
                       'Light',
                       'Color',
                       'Details',
                       'Texture',
                       'Crop',
                     ])
-                      customButton(
+                      pill(
                         name,
-                        section == name,
-                        () => setState(() {
-                          section = name;
-                        }),
+                        tab == name,
+                        () => setState(() => tab = name),
                       ),
                   ],
                 ),
               ),
               SizedBox(
-                height: 250,
+                height: 245,
                 child: SingleChildScrollView(
                   child: toolsPanel(),
                 ),
               ),
-              const Divider(
-                height: 1,
-                color: tile,
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 7,
-                ),
-                child: Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton.icon(
-                      onPressed: busy
-                          ? null
-                          : () => change(() {
-                                edit = EditData();
-                              }),
-                      icon: const Icon(
-                        Icons.restart_alt,
-                        size: 19,
-                      ),
-                      label: const Text('Reset'),
+              const Divider(color: surface, height: 1),
+              Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => change(
+                              () => edit = Edit(),
+                            ),
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Reset'),
+                  ),
+                  const Text(
+                    'HOLD TO COMPARE',
+                    style: TextStyle(
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      color: muted,
                     ),
-                    const Text(
-                      'HOLD TO COMPARE',
-                      style: TextStyle(
-                        fontSize: 9,
-                        letterSpacing: 1,
-                        color: silver,
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: busy
-                          ? null
-                          : showExportOptions,
-                      icon: const Icon(
-                        Icons.ios_share,
-                        size: 18,
-                      ),
-                      label: const Text('Export'),
-                    ),
-                  ],
-                ),
+                  ),
+                  TextButton.icon(
+                    onPressed: busy ? null : showExport,
+                    icon: const Icon(Icons.ios_share),
+                    label: const Text('Export'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1536,80 +1537,9 @@ class _LTJ3HomeState extends State<LTJ3Home> {
     );
   }
 
-  void showExportOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: panel,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(25),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'LTJ3 ULTRA HD EXPORT',
-                  style: TextStyle(
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Full original resolution',
-                  style: TextStyle(color: silver),
-                ),
-                const SizedBox(height: 20),
-                ListTile(
-                  title: const Text('JPEG MAX QUALITY'),
-                  subtitle: const Text(
-                    'Quality 100 · Smaller than PNG',
-                  ),
-                  leading: const Icon(Icons.image_outlined),
-                  onTap: () {
-                    exportPng = false;
-                    Navigator.pop(sheetContext);
-                    exportPhoto();
-                  },
-                ),
-                const Divider(color: tile),
-                ListTile(
-                  title: const Text('PNG LOSSLESS'),
-                  subtitle: const Text(
-                    'Lossless compression · Larger file',
-                  ),
-                  leading:
-                      const Icon(Icons.high_quality_outlined),
-                  onTap: () {
-                    exportPng = true;
-                    Navigator.pop(sheetContext);
-                    exportPhoto();
-                  },
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Large images may require more memory '
-                  'and processing time.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: silver,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (!started) {
-      return welcomeScreen();
-    }
+    if (!started) return welcome();
 
     return Scaffold(
       appBar: AppBar(
@@ -1617,10 +1547,9 @@ class _LTJ3HomeState extends State<LTJ3Home> {
         title: const Text(
           'LTJ3 EDITOR',
           style: TextStyle(
-            fontFamily: 'Georgia',
-            fontWeight: FontWeight.w400,
             letterSpacing: 3,
             fontSize: 18,
+            fontWeight: FontWeight.w400,
           ),
         ),
         leading: IconButton(
@@ -1629,34 +1558,33 @@ class _LTJ3HomeState extends State<LTJ3Home> {
           },
           icon: Icon(
             gallery
-                ? Icons.grid_view_rounded
+                ? Icons.grid_view
                 : Icons.arrow_back_ios_new,
           ),
         ),
         actions: [
           if (!gallery)
             IconButton(
-              onPressed:
-                  busy || undoHistory.isEmpty ? null : undo,
+              onPressed: busy || undoHistory.isEmpty
+                  ? null
+                  : undo,
               icon: const Icon(Icons.undo),
             ),
           if (!gallery)
             IconButton(
-              onPressed:
-                  busy || redoHistory.isEmpty ? null : redo,
+              onPressed: busy || redoHistory.isEmpty
+                  ? null
+                  : redo,
               icon: const Icon(Icons.redo),
             ),
           if (!gallery)
             IconButton(
-              onPressed:
-                  busy ? null : showExportOptions,
+              onPressed: busy ? null : showExport,
               icon: const Icon(Icons.ios_share),
             ),
         ],
       ),
-      body: gallery
-          ? galleryScreen()
-          : editorScreen(),
+      body: gallery ? galleryView() : editorView(),
     );
   }
 }
