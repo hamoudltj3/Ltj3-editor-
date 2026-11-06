@@ -1,0 +1,15 @@
+name: luna_pro
+description: Professional offline photo editor starter
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  image_picker: ^1.1.2
+  image: ^4.2.0
+  path_provider: ^2.1.4
+  share_plus: ^10.0.2
+flutter:
+  uses-material-design: true
