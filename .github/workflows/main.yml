@@ -1,12 +1,23 @@
 
-name: Luna Pro Flutter Check
+name: Luna Pro Build and Deploy
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
 jobs:
-  flutter-check:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +35,29 @@ jobs:
       - name: Check Dart code
         run: dart analyze lib/main.dart
 
-      - name: Build Flutter web
-        run: |
-          flutter create --platforms=web .
-          flutter build web --release
+      - name: Create web platform
+        run: flutter create --platforms=web .
+
+      - name: Build Flutter Web
+        run: flutter build web --release --base-href "/Ltj3-editor-/"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
